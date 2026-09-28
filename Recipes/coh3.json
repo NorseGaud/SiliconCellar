@@ -1,0 +1,11 @@
+{
+  "id": "coh3",
+  "title": "Company of Heroes 3",
+  "steamID": "1677280",
+  "installFolder": "Company of Heroes 3",
+  "executable": "RelicCoH3.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

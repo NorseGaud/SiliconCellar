@@ -1,0 +1,11 @@
+{
+  "id": "aom-retold",
+  "title": "Age of Mythology: Retold",
+  "steamID": "1934680",
+  "installFolder": "Age of Mythology Retold",
+  "executable": "AoMRT_s.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "mdk",
+  "title": "MDK",
+  "steamID": "38450",
+  "installFolder": "MDK",
+  "executable": "MDK3DFX.EXE",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {
+    "NGLIDE_BACKEND": "1",
+    "NGLIDE_RESOLUTION": "1",
+    "NGLIDE_ASPECT": "0",
+    "NGLIDE_VSYNC": "1",
+    "NGLIDE_SPLASH": "0"
+  },
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b;ddraw=b",
+  "quarantineFiles": ["ddraw.dll"],
+  "directLaunch": true,
+  "wineD3DRenderer": "gl",
+  "wineVirtualDesktop": "display"
+}

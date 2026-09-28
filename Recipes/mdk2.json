@@ -1,0 +1,11 @@
+{
+  "id": "mdk2",
+  "title": "MDK 2",
+  "steamID": "38460",
+  "installFolder": "MDK 2",
+  "executable": "mdk2Main.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

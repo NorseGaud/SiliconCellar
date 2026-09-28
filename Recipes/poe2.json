@@ -1,0 +1,11 @@
+{
+  "id": "poe2",
+  "title": "Path of Exile 2",
+  "steamID": "2694490",
+  "installFolder": "Path of Exile 2",
+  "executable": "PathOfExileSteam.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "san-andreas-de",
+  "title": "Grand Theft Auto: San Andreas – The Definitive Edition",
+  "steamID": "1547000",
+  "installFolder": "GTA San Andreas - The Definitive Edition",
+  "executable": "SanAndreas.exe",
+  "executableRelativePath": "Gameface/Binaries/Win64/SanAndreas.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

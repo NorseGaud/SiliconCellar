@@ -1,0 +1,11 @@
+{
+  "id": "zero-hour",
+  "title": "Command & Conquer: Generals Zero Hour",
+  "steamID": "2732960",
+  "installFolder": "Command & Conquer Generals - Zero Hour",
+  "executable": "Generals.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

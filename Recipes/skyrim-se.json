@@ -1,0 +1,11 @@
+{
+  "id": "skyrim-se",
+  "title": "The Elder Scrolls V: Skyrim Special Edition",
+  "steamID": "489830",
+  "installFolder": "Skyrim Special Edition",
+  "executable": "SkyrimSE.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

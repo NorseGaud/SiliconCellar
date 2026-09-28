@@ -1,0 +1,12 @@
+{
+  "id": "cs2",
+  "title": "Counter-Strike 2",
+  "steamID": "730",
+  "installFolder": "Counter-Strike Global Offensive",
+  "executable": "cs2.exe",
+  "executableRelativePath": "game/bin/win64/cs2.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": ["-cef-disable-gpu"],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}
