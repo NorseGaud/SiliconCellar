@@ -18,6 +18,7 @@ public struct SteamLaunchProgress: Equatable, Sendable {
         htmlLog: URL?,
         sessionLog: URL?,
         wineSessionLive: Bool,
+        signedIn: Bool = false,
         now: Date = Date(),
         files: FileSystem = FoundationFileSystem()
     ) -> SteamLaunchProgress {
@@ -26,6 +27,7 @@ public struct SteamLaunchProgress: Equatable, Sendable {
             html: text(htmlLog, files: files),
             session: text(sessionLog, files: files),
             live: wineSessionLive,
+            signedIn: signedIn,
             now: now,
             sessionFresh: isFresh(sessionLog, now: now, files: files)
         )
@@ -36,11 +38,14 @@ public struct SteamLaunchProgress: Equatable, Sendable {
         html: String,
         session: String,
         live: Bool,
+        signedIn: Bool = false,
         now: Date = Date(),
         maxAge: TimeInterval = freshness,
         sessionFresh: Bool = false
     ) -> SteamLaunchProgress {
         guard live else { return SteamLaunchProgress() }
+        // Sign-in state comes from loginusers.vdf — do not keep "starting login window" after that.
+        if signedIn { return SteamLaunchProgress() }
         var events: [Event] = []
         collect(bootstrap, untimestamped: false, now: now, maxAge: maxAge, sessionFresh: false, into: &events)
         collect(html, untimestamped: false, now: now, maxAge: maxAge, sessionFresh: false, into: &events)

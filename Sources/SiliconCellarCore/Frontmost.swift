@@ -139,8 +139,9 @@ public struct WorkspaceFrontmost: FrontmostActivating {
     public func bringSteamUIToFront(executable: URL, timeout: TimeInterval) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let activated = activateNow(executable: executable)
-            if activated, SteamUIFocus.hasVisibleWineWindow(for: executable) { break }
+            _ = activateNow(executable: executable)
+            // On-screen windows can still sit behind Silicon Cellar — require Wine frontmost.
+            if SteamUIFocus.isWineFrontmost(for: executable) { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
         WineTerminal.closeStagingSessions()
@@ -173,8 +174,12 @@ public struct WorkspaceFrontmost: FrontmostActivating {
                 let ref = WineHost.RunningApp(executable: app.executableURL, bundle: app.bundleURL)
                 guard wanted.contains(ref) else { continue }
                 NSApp.yieldActivation(to: app)
-                _ = app.activate()
+                // activateAllWindows: Steam's UI is often a child Wine window, not the first one.
+                _ = app.activate(options: [.activateAllWindows])
                 didActivate = true
+            }
+            if didActivate {
+                _ = SteamUIFocus.raiseVisibleWineWindows(for: executable)
             }
             return didActivate
         }
@@ -203,20 +208,24 @@ public enum SteamUIFocus {
     }
 
     public static func hasVisibleWineWindow(for wineExecutable: URL) -> Bool {
-        let wantedPIDs = wineProcessIDs(for: wineExecutable)
-        guard !wantedPIDs.isEmpty else { return false }
-        let windows =
-            CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []
-        return windows.contains { window in
-            guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
-                (window[kCGWindowLayer as String] as? Int) == 0,
-                let bounds = window[kCGWindowBounds as String] as? [String: Any]
-            else { return false }
-            let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
-            let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
-            return width > 100 && height > 100
-        }
+        largestVisibleWineWindow(for: wineExecutable) != nil
+    }
+
+    /// True when the frontmost macOS app is a Wine host process for this runtime.
+    public static func isWineFrontmost(for wineExecutable: URL) -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication else { return false }
+        let ref = WineHost.RunningApp(executable: front.executableURL, bundle: front.bundleURL)
+        return WineHost.isWineProcess(wineExecutable: wineExecutable, running: ref)
+    }
+
+    /// Raise the largest on-screen Wine window (Steam UI / game) without forcing always-on-top.
+    @discardableResult
+    public static func raiseVisibleWineWindows(for wineExecutable: URL) -> Bool {
+        guard let match = largestVisibleWineWindow(for: wineExecutable),
+            let pid = match[kCGWindowOwnerPID as String] as? Int32
+        else { return false }
+        let name = (match[kCGWindowName as String] as? String) ?? ""
+        return raiseWindow(pid: pid, name: name)
     }
 
     /// Raise a Wine window whose title contains `title` so the game can capture the cursor.
@@ -243,16 +252,46 @@ public enum SteamUIFocus {
             let pid = match[kCGWindowOwnerPID as String] as? Int32,
             let name = match[kCGWindowName as String] as? String
         else { return false }
+        return raiseWindow(pid: pid, name: name)
+    }
 
+    private static func largestVisibleWineWindow(for wineExecutable: URL) -> [String: Any]? {
+        let wantedPIDs = wineProcessIDs(for: wineExecutable)
+        guard !wantedPIDs.isEmpty else { return nil }
+        let windows =
+            CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return windows
+            .compactMap { window -> (area: Double, window: [String: Any])? in
+                guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
+                    (window[kCGWindowLayer as String] as? Int) == 0,
+                    let bounds = window[kCGWindowBounds as String] as? [String: Any]
+                else { return nil }
+                let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
+                let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+                guard width > 100, height > 100 else { return nil }
+                return (width * height, window)
+            }
+            .max(by: { $0.area < $1.area })?
+            .window
+    }
+
+    private static func raiseWindow(pid: Int32, name: String) -> Bool {
         let escaped = name.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+        let raiseNamed =
+            name.isEmpty
+            ? ""
+            : """
+                  try
+                    perform action "AXRaise" of window "\(escaped)" of targetProc
+                  end try
+              """
         let script = """
             tell application "System Events"
               set targetProc to first process whose unix id is \(pid)
               set frontmost of targetProc to true
-              try
-                perform action "AXRaise" of window "\(escaped)" of targetProc
-              end try
+            \(raiseNamed)
             end tell
             """
         let process = Process()

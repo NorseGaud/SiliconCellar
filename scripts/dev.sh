@@ -5,7 +5,34 @@ cd "$ROOT"
 . "$ROOT/scripts/app-bundle.sh"
 
 DEV_APP="$ROOT/.build/dev/SiliconCellar.app"
+PREFIX="${HOME}/Library/Application Support/SiliconCellar/prefix"
 pid=""
+
+stop_wine() {
+    echo "Stopping Wine / Steam session…"
+    # wineserver -k can Abort (trap 6) when Engine libs are mid-replace or already dying.
+    # Kill by path instead — Wine keeps Engine dylibs open after the app exits.
+    pkill -TERM -f "SiliconCellar[.]app/Contents/Resources/Engine/.*/wineserver" 2>/dev/null || true
+    pkill -TERM -f "[.]build/engine/bin/wineserver" 2>/dev/null || true
+    # Give processes time to drop file locks before we replace Engine.
+    sleep 0.8
+    pkill -KILL -f "SiliconCellar[.]app/Contents/Resources/Engine/.*/wineserver" 2>/dev/null || true
+    pkill -KILL -f "[.]build/engine/bin/wineserver" 2>/dev/null || true
+    # Best-effort clean stop when the binary and libs are still intact.
+    wineserver=""
+    engine_lib=""
+    if [ -x "$DEV_APP/Contents/Resources/Engine/bin/wineserver" ]; then
+        wineserver="$DEV_APP/Contents/Resources/Engine/bin/wineserver"
+        engine_lib="$DEV_APP/Contents/Resources/Engine/lib"
+    elif [ -x "$ROOT/.build/engine/bin/wineserver" ]; then
+        wineserver="$ROOT/.build/engine/bin/wineserver"
+        engine_lib="$ROOT/.build/engine/lib"
+    fi
+    if [ -n "$wineserver" ] && [ -d "$PREFIX" ]; then
+        DYLD_FALLBACK_LIBRARY_PATH="$engine_lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}" \
+            WINEPREFIX="$PREFIX" "$wineserver" -k >/dev/null 2>&1 || true
+    fi
+}
 
 stop_app() {
     if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
@@ -13,6 +40,8 @@ stop_app() {
         wait "$pid" 2>/dev/null || true
     fi
     pid=""
+    # Wine keeps Engine dylibs open after the app exits — stop it before we replace Engine.
+    stop_wine
 }
 
 source_stamp() {
@@ -61,9 +90,13 @@ start_app() {
     fi
     ENGINE_SRC="$ROOT/.build/engine"
     if [ -x "$ENGINE_SRC/bin/wine" ]; then
+        # stop_app already killed Wine; replace Engine without "Operation not permitted".
         rm -rf "$DEV_APP/Contents/Resources/Engine"
         mkdir -p "$DEV_APP/Contents/Resources/Engine"
-        cp -R "$ENGINE_SRC"/. "$DEV_APP/Contents/Resources/Engine"/
+        if ! cp -R "$ENGINE_SRC"/. "$DEV_APP/Contents/Resources/Engine"/; then
+            echo "Could not copy Engine into the app bundle (is Wine still running?)."
+            return 0
+        fi
     fi
     echo "Launching $DEV_APP"
     "$DEV_APP/Contents/MacOS/SiliconCellar" &
@@ -79,7 +112,8 @@ while true; do
     sleep 1
     now="$(source_stamp)"
     if [ "$now" != "$stamp" ]; then
-        echo "Files changed. Reloading…"
+        echo "Files changed. Waiting 5s for edits to settle…"
+        sleep 5
         stamp="$(wait_until_stable)"
         start_app
     fi

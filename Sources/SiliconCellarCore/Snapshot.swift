@@ -17,17 +17,21 @@ public struct LibrarySnapshot: Equatable, Sendable {
     public var stage: GameStage
     public var downloadFraction: Double?
     public var wineSessionLive: Bool
+    /// Steam.exe (and UI helper) are up — stronger than wineserver alone.
+    public var steamReady: Bool
     public var gameRunning: Bool
 
     public init(
         stage: GameStage,
         downloadFraction: Double? = nil,
         wineSessionLive: Bool = false,
+        steamReady: Bool = false,
         gameRunning: Bool = false
     ) {
         self.stage = stage
         self.downloadFraction = downloadFraction
         self.wineSessionLive = wineSessionLive
+        self.steamReady = steamReady
         self.gameRunning = gameRunning
     }
 
@@ -46,6 +50,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .downloading,
                 downloadFraction: snapshot.downloadFraction,
                 wineSessionLive: snapshot.wineSessionLive,
+                steamReady: snapshot.steamReady,
                 gameRunning: false
             )
         }
@@ -53,6 +58,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return LibrarySnapshot(
                 stage: snapshot.isInstalled || snapshot.stage == .running ? .ready : snapshot.stage,
                 wineSessionLive: snapshot.wineSessionLive,
+                steamReady: snapshot.steamReady,
                 gameRunning: false
             )
         }
@@ -68,6 +74,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
         steamID: String,
         installFolder: String,
         wineSessionLive: Bool,
+        steamReady: Bool = false,
         gameRunning: Bool = false,
         now: Date = Date(),
         files: FileSystem = FoundationFileSystem()
@@ -80,11 +87,12 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return LibrarySnapshot(
                 stage: gameRunning ? .running : .ready,
                 wineSessionLive: wineSessionLive,
+                steamReady: steamReady,
                 gameRunning: gameRunning
             )
         }
         guard runtimeReady || signedIn else {
-            return LibrarySnapshot(stage: .setup, wineSessionLive: wineSessionLive)
+            return LibrarySnapshot(stage: .setup, wineSessionLive: wineSessionLive, steamReady: steamReady)
         }
         if flags != 4 && total > 0 {
             let modified = manifest.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]) }?.contentModificationDate
@@ -96,12 +104,13 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return LibrarySnapshot(
                 stage: .downloading,
                 downloadFraction: fresh && valid ? downloaded / total : nil,
-                wineSessionLive: wineSessionLive
+                wineSessionLive: wineSessionLive,
+                steamReady: steamReady
             )
         }
         if signedIn {
-            return LibrarySnapshot(stage: .install, wineSessionLive: wineSessionLive)
+            return LibrarySnapshot(stage: .install, wineSessionLive: wineSessionLive, steamReady: steamReady)
         }
-        return LibrarySnapshot(stage: .signIn, wineSessionLive: wineSessionLive)
+        return LibrarySnapshot(stage: .signIn, wineSessionLive: wineSessionLive, steamReady: steamReady)
     }
 }

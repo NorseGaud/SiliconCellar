@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol CommandRunning {
+public protocol CommandRunning: Sendable {
     @discardableResult
     func run(
         executable: URL,
@@ -60,48 +60,14 @@ public struct ProcessCommandRunner: CommandRunning {
         timeout: TimeInterval,
         workingDirectory: URL?
     ) throws -> String {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.currentDirectoryURL = workingDirectory
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        let handle = pipe.fileHandleForReading
-        let lock = NSLock()
-        var collected = Data()
-        // Drain while the process runs. If we wait to read until exit, a full pipe
-        // can block the child (for example `ps` with a long process list).
-        handle.readabilityHandler = { file in
-            let data = file.availableData
-            guard !data.isEmpty else { return }
-            lock.lock()
-            collected.append(data)
-            lock.unlock()
-        }
-        try process.run()
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        if process.isRunning {
-            process.terminate()
-            handle.readabilityHandler = nil
-            throw TimeoutError()
-        }
-        handle.readabilityHandler = nil
-        let tail = handle.readDataToEndOfFile()
-        if !tail.isEmpty {
-            lock.lock()
-            collected.append(tail)
-            lock.unlock()
-        }
-        let output = String(decoding: collected, as: UTF8.self)
-        if process.terminationStatus != 0 {
-            throw PortError("\(executable.lastPathComponent) failed (\(process.terminationStatus)): \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-        return output
+        try runCollecting(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            timeout: timeout,
+            workingDirectory: workingDirectory,
+            onChunk: nil
+        )
     }
 
     public func runStreaming(
@@ -112,58 +78,14 @@ public struct ProcessCommandRunner: CommandRunning {
         workingDirectory: URL?,
         onChunk: @escaping (String) -> Void
     ) throws -> String {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.currentDirectoryURL = workingDirectory
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        let handle = pipe.fileHandleForReading
-        let lock = NSLock()
-        var collected = Data()
-        handle.readabilityHandler = { file in
-            let data = file.availableData
-            guard !data.isEmpty else { return }
-            lock.lock()
-            collected.append(data)
-            lock.unlock()
-            let text = String(decoding: data, as: UTF8.self)
-            for line in text.split(whereSeparator: \.isNewline) {
-                let piece = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !piece.isEmpty { onChunk(piece) }
-            }
-        }
-        try process.run()
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        if process.isRunning {
-            process.terminate()
-            handle.readabilityHandler = nil
-            throw TimeoutError()
-        }
-        handle.readabilityHandler = nil
-        let tail = handle.readDataToEndOfFile()
-        if !tail.isEmpty {
-            lock.lock()
-            collected.append(tail)
-            lock.unlock()
-            let text = String(decoding: tail, as: UTF8.self)
-            for line in text.split(whereSeparator: \.isNewline) {
-                let piece = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !piece.isEmpty { onChunk(piece) }
-            }
-        }
-        let output = String(decoding: collected, as: UTF8.self)
-        if process.terminationStatus != 0 {
-            throw PortError(
-                "\(executable.lastPathComponent) failed (\(process.terminationStatus)): \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
-            )
-        }
-        return output
+        try runCollecting(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            timeout: timeout,
+            workingDirectory: workingDirectory,
+            onChunk: onChunk
+        )
     }
 
     public func start(
@@ -190,6 +112,90 @@ public struct ProcessCommandRunner: CommandRunning {
             throw PortError("\(executable.lastPathComponent) exited before it could open. See \(log.path)")
         }
         try handle.close()
+    }
+
+    /// Drain via readabilityHandler only. Do not call `readDataToEndOfFile` after a handler —
+    /// that combination can hang and leave PIPE fds open.
+    private func runCollecting(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval,
+        workingDirectory: URL?,
+        onChunk: ((String) -> Void)?
+    ) throws -> String {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = environment
+        process.currentDirectoryURL = workingDirectory
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        let handle = pipe.fileHandleForReading
+        let lock = NSLock()
+        var collected = Data()
+
+        handle.readabilityHandler = { file in
+            let data = file.availableData
+            if data.isEmpty {
+                file.readabilityHandler = nil
+                return
+            }
+            lock.lock()
+            collected.append(data)
+            lock.unlock()
+            if let onChunk {
+                let text = String(decoding: data, as: UTF8.self)
+                for line in text.split(whereSeparator: \.isNewline) {
+                    let piece = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !piece.isEmpty { onChunk(piece) }
+                }
+            }
+        }
+
+        try process.run()
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        let timedOut = process.isRunning
+        if timedOut {
+            process.terminate()
+        }
+        handle.readabilityHandler = nil
+        process.waitUntilExit()
+
+        // Writer is closed after waitUntilExit; availableData returns leftovers or empty.
+        let leftover = handle.availableData
+        if !leftover.isEmpty {
+            lock.lock()
+            collected.append(leftover)
+            lock.unlock()
+            if let onChunk {
+                let text = String(decoding: leftover, as: UTF8.self)
+                for line in text.split(whereSeparator: \.isNewline) {
+                    let piece = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !piece.isEmpty { onChunk(piece) }
+                }
+            }
+        }
+        try? handle.close()
+
+        if timedOut {
+            throw TimeoutError()
+        }
+
+        lock.lock()
+        let output = String(decoding: collected, as: UTF8.self)
+        lock.unlock()
+        if process.terminationStatus != 0 {
+            throw PortError(
+                "\(executable.lastPathComponent) failed (\(process.terminationStatus)): \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+        return output
     }
 }
 

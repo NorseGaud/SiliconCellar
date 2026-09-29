@@ -1,6 +1,6 @@
 import Foundation
 
-public final class Runtime {
+public final class Runtime: @unchecked Sendable {
     public let recipe: Recipe
     public let root: URL
     public let wine: URL
@@ -126,13 +126,19 @@ public final class Runtime {
     }
 
     public func snapshot(now: Date = Date()) -> LibrarySnapshot {
-        fileSnapshot(now: now, wineSessionLive: isSessionLive, gameRunning: isGameRunning)
+        fileSnapshot(
+            now: now,
+            wineSessionLive: isSessionLive,
+            steamReady: steamClient.isFullyRunning(prefix: prefix),
+            gameRunning: isGameRunning
+        )
     }
 
     /// Install/sign-in state from disk only. Does not wait on wineserver or `ps`.
     public func fileSnapshot(
         now: Date = Date(),
         wineSessionLive: Bool = false,
+        steamReady: Bool = false,
         gameRunning: Bool = false
     ) -> LibrarySnapshot {
         LibrarySnapshot.inspect(
@@ -144,6 +150,7 @@ public final class Runtime {
             steamID: recipe.steamID,
             installFolder: recipe.installFolder,
             wineSessionLive: wineSessionLive,
+            steamReady: steamReady,
             gameRunning: gameRunning,
             now: now,
             files: files
@@ -157,6 +164,7 @@ public final class Runtime {
             htmlLog: steamDirectory?.appendingPathComponent("logs/steamui_html.txt"),
             sessionLog: logs.appendingPathComponent("steam-session.log"),
             wineSessionLive: wineSessionLive ?? isSessionLive,
+            signedIn: isSignedIn,
             now: Date(),
             files: files
         )
@@ -164,9 +172,12 @@ public final class Runtime {
 
     public func inspectSession(now: Date = Date()) -> (LibrarySnapshot, SteamLaunchProgress) {
         let live = isSessionLive
+        let ready = steamClient.isFullyRunning(prefix: prefix)
         let running = isGameRunning
+        // Steam client updates can drop a new cef.win64 helper mid-session; keep the wrap applied.
+        if live { try? ensureSteamWebHelperWrapper() }
         return (
-            fileSnapshot(now: now, wineSessionLive: live, gameRunning: running),
+            fileSnapshot(now: now, wineSessionLive: live, steamReady: ready, gameRunning: running),
             launchProgress(wineSessionLive: live)
         )
     }
@@ -336,7 +347,7 @@ public final class Runtime {
         try resetSteamHTMLCache()
         try commands.start(
             executable: wine,
-            arguments: [steam.path] + Self.wineSteamArguments([]),
+            arguments: [steam.path] + Self.wineSteamArguments([], verifyFiles: true),
             environment: wineEnvironment(advertiseAVX: false),
             workingDirectory: steamLibrary,
             log: logs.appendingPathComponent("steam-bootstrap.log")
@@ -377,25 +388,25 @@ public final class Runtime {
             sink.say("Steam is already open.")
             try startSteamDesktop(play: false, hud: hud, log: log)
         }
-        // Send install/uninstall URI right after Steam starts. Do not wait for
-        // process detection first — a hung ps check used to block this forever.
+        // Install/uninstall need a live Steam client before the steam:// URI, or Steam drops it.
         if install || uninstall {
+            try waitForSteamClient()
             try startSteamRequest(install: install, uninstall: uninstall, hud: hud, log: log)
-        }
-        if !steamOpen {
-            if install || uninstall {
-                try? waitForSteamClient()
-            } else {
-                try waitForSteamClient()
-            }
+        } else if !steamOpen {
+            try waitForSteamClient()
         }
         if directPlay {
             try startDirectGame(hud: hud, log: log)
         }
-        // Install/uninstall must return quickly so waitForInstall can see finished files.
-        // A long focus poll kept the UI on "Installing…" after the download finished.
+        // Install/uninstall must not block on a long focus poll — waitForInstall needs to run.
+        // Raise immediately, then keep polling Steam UI on a side queue.
         if install || uninstall {
-            frontmost.bringToFront(executable: wine)
+            let front = frontmost
+            let wineURL = wine
+            front.bringToFront(executable: wineURL)
+            DispatchQueue.global(qos: .userInitiated).async {
+                front.bringSteamUIToFront(executable: wineURL, timeout: 30)
+            }
         } else if directPlay {
             // Game must be frontmost so Wine can hide the host cursor.
             frontmost.bringGameWindowToFront(
@@ -537,15 +548,24 @@ public final class Runtime {
     }
 
     private func waitForSteamClient() throws {
-        if steamClient.isRunning(prefix: prefix) || isSessionLive { return }
+        if steamClient.isFullyRunning(prefix: prefix) {
+            try? ensureSteamWebHelperWrapper()
+            return
+        }
         let deadline = Date().addingTimeInterval(steamClientWait)
         while Date() < deadline {
-            if steamClient.isRunning(prefix: prefix) || isSessionLive { return }
+            try? ensureSteamWebHelperWrapper()
+            // Wineserver alone is not enough — wait for Steam.exe and the UI helper.
+            if steamClient.isFullyRunning(prefix: prefix) {
+                try? ensureSteamWebHelperWrapper()
+                return
+            }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        guard steamClient.isRunning(prefix: prefix) || isSessionLive else {
+        guard steamClient.isFullyRunning(prefix: prefix) else {
             throw PortError("Steam did not open a window. Try Sign in again.")
         }
+        try? ensureSteamWebHelperWrapper()
     }
 
     private func waitForInstall() throws {
@@ -722,17 +742,22 @@ public final class Runtime {
         "-cef-disable-gpu",
     ]
 
-    static func wineSteamArguments(_ extra: [String]) -> [String] {
+    static func wineSteamArguments(_ extra: [String], verifyFiles: Bool = false) -> [String] {
         var seen = Set<String>()
         let blocked = Set([
             "-cef-single-process",
             "-cef-force-32bit",
             "-allosarches",
         ])
-        return (requiredSteamArguments + extra).filter { seen.insert($0).inserted && !blocked.contains($0) }
+        var base = requiredSteamArguments
+        // First bootstrap must verify/download the client; -noverifyfiles skips that and leaves no steamui.dll.
+        if verifyFiles {
+            base = base.filter { $0 != "-noverifyfiles" }
+        }
+        return (base + extra).filter { seen.insert($0).inserted && !blocked.contains($0) }
     }
 
-    func ensureSteamWebHelperWrapper() throws {
+    public func ensureSteamWebHelperWrapper() throws {
         try wrapSteamWebHelpers()
         let steamCfg = steamLibrary.appendingPathComponent("steam.cfg")
         if files.fileExists(steamCfg) {
@@ -743,6 +768,8 @@ public final class Runtime {
     private func wrapSteamWebHelpers() throws {
         let cefRoot = steamLibrary.appendingPathComponent("bin/cef")
         guard files.fileExists(cefRoot) else { return }
+        // Wrap every cef.* tree (win7, win7x64, win64, …). Steam updates pick a new folder
+        // and leave older wrapped helpers unused — missing wrap on the active tree = black UI.
         for cef in (try? files.contentsOfDirectory(cefRoot)) ?? [] {
             try wrapSteamWebHelper(in: cef)
         }
@@ -755,9 +782,11 @@ public final class Runtime {
         if files.fileExists(helper) {
             let current = try files.read(helper)
             if SteamWebHelper.containsMarker(current) { return }
+            // Steam updates can replace helper; keep Valve binary for the wrapper to launch.
             try files.write(current, to: valve)
         }
         try files.write(steamWebHelperWrapper, to: helper)
+        try files.setExecutable(helper)
     }
 
     private func resetSteamHTMLCache() throws {
@@ -890,6 +919,12 @@ public struct Library: @unchecked Sendable {
 
 public protocol SteamClientInspecting: Sendable {
     func isRunning(prefix: URL) -> Bool
+    /// Steam.exe plus the UI helper (steamwebhelper) — ready for install / sign-in dialogs.
+    func isFullyRunning(prefix: URL) -> Bool
+}
+
+extension SteamClientInspecting {
+    public func isFullyRunning(prefix: URL) -> Bool { isRunning(prefix: prefix) }
 }
 
 public struct ProcessSteamClientInspector: SteamClientInspecting {
@@ -904,6 +939,11 @@ public struct ProcessSteamClientInspector: SteamClientInspecting {
     public func isRunning(prefix: URL) -> Bool {
         guard let text = Self.processList(commands: commands, timeout: timeout) else { return false }
         return SteamClientProcess.isRunning(in: text, prefix: prefix)
+    }
+
+    public func isFullyRunning(prefix: URL) -> Bool {
+        guard let text = Self.processList(commands: commands, timeout: timeout) else { return false }
+        return SteamClientProcess.isFullyRunning(in: text, prefix: prefix)
     }
 
     public static func processList(
@@ -940,6 +980,14 @@ public enum SteamClientProcess {
             let command = String(line)
             return isSteamClient(command)
                 && (command.contains(prefix.path) || command.localizedCaseInsensitiveContains("steam.exe"))
+        }
+    }
+
+    /// Steam client process plus steamwebhelper — UI can accept steam:// URIs.
+    public static func isFullyRunning(in processList: String, prefix: URL) -> Bool {
+        guard isRunning(in: processList, prefix: prefix) else { return false }
+        return processList.split(whereSeparator: \.isNewline).contains { line in
+            String(line).lowercased().contains("steamwebhelper")
         }
     }
 

@@ -74,6 +74,20 @@ final class SteamLaunchProgressTests: XCTestCase {
         XCTAssertTrue(progress.waitingForWindow)
     }
 
+    func testClearsWhenSignedIn() {
+        let progress = SteamLaunchProgress.parse(
+            bootstrap: "[2026-09-28 00:28:34] Verification complete",
+            html: "[2026-09-28 00:28:34] Started webhelper process 484",
+            session: "",
+            live: true,
+            signedIn: true,
+            now: date("2026-09-28 00:28:34")
+        )
+        XCTAssertEqual(progress.detail, "")
+        XCTAssertFalse(progress.waitingForWindow)
+        XCTAssertNil(progress.fraction)
+    }
+
     private func date(_ text: String) -> Date {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

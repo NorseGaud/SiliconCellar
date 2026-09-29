@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model?.softRaiseWineIfNeeded()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         model?.stopWineSessions()
     }
@@ -71,6 +75,7 @@ final class LibraryModel: ObservableObject {
     @Published var detailStatusReady = false
     private var library: Library?
     private var timer: Timer?
+    private var steamRaiseTimer: Timer?
     private var refreshInFlight = false
     private var refreshAgain = false
 
@@ -80,11 +85,65 @@ final class LibraryModel: ObservableObject {
     func stopWineSessions() {
         timer?.invalidate()
         timer = nil
+        stopSteamRaisePulse()
         library?.stopAllSessions()
+    }
+
+    /// Soft-raise Wine when Silicon Cellar becomes frontmost during a live session (not always-on-top).
+    func softRaiseWineIfNeeded() {
+        guard snapshot.wineSessionLive, let library else { return }
+        // During play/stop, do not fight the game window. During Steam dialogs, keep raising.
+        if busy {
+            guard let current = LibraryAction(rawValue: activity),
+                Self.steamDialogActions.contains(current)
+            else { return }
+        }
+        // Steam updates can drop a new cef.win64 helper; keep the single-process wrap applied.
+        try? library.runtime(for: selected ?? Recipe.onboarding).ensureSteamWebHelperWrapper()
+        WorkspaceFrontmost().bringToFront(executable: library.wine)
+    }
+
+    /// Keep Steam above Silicon Cellar while install / uninstall / sign-in needs a Steam dialog.
+    private func startSteamRaisePulse(wine: URL) {
+        stopSteamRaisePulse()
+        // Defer past the button click — macOS returns focus to the clicked app otherwise.
+        let delays: [TimeInterval] = [0.15, 0.45, 0.9]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.shouldPulseSteamRaise else { return }
+                WorkspaceFrontmost().bringToFront(executable: wine)
+            }
+        }
+        var ticks = 0
+        steamRaiseTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                ticks += 1
+                guard self.shouldPulseSteamRaise, ticks <= 50 else {
+                    self.stopSteamRaisePulse()
+                    return
+                }
+                WorkspaceFrontmost().bringToFront(executable: wine)
+            }
+        }
+    }
+
+    private var shouldPulseSteamRaise: Bool {
+        guard busy, let current = LibraryAction(rawValue: activity) else { return false }
+        return Self.steamDialogActions.contains(current)
+    }
+
+    private func stopSteamRaisePulse() {
+        steamRaiseTimer?.invalidate()
+        steamRaiseTimer = nil
     }
 
     /// Always close Steam. Does not stop only the game.
     func stopSteamSession() {
+        stopSteamRaisePulse()
         library?.stopAllSessions()
         appendStatus("Stopped Steam.")
         busy = false
@@ -93,6 +152,15 @@ final class LibraryModel: ObservableObject {
         refreshInstalled()
         refresh()
     }
+
+    /// Actions that show Steam UI (sign-in, install confirm, uninstall confirm, …).
+    private static let steamFrontActions: Set<LibraryAction> = [
+        .setup, .steam, .install, .uninstall, .logout, .play
+    ]
+    /// Busy states where soft-raise / pulse should pull Steam forward (not play).
+    private static let steamDialogActions: Set<LibraryAction> = [
+        .setup, .steam, .install, .uninstall, .logout
+    ]
 
     func start() {
         do {
@@ -218,9 +286,14 @@ final class LibraryModel: ObservableObject {
         }
         let recipe = selected ?? Recipe.onboarding
         let keepLive = snapshot.wineSessionLive
+        let keepSteam = snapshot.steamReady
         let keepGame = snapshot.gameRunning
         snapshot = LibrarySnapshot.display(
-            library.runtime(for: recipe).fileSnapshot(wineSessionLive: keepLive, gameRunning: keepGame),
+            library.runtime(for: recipe).fileSnapshot(
+                wineSessionLive: keepLive,
+                steamReady: keepSteam,
+                gameRunning: keepGame
+            ),
             activity: activity,
             busy: busy
         )
@@ -246,9 +319,14 @@ final class LibraryModel: ObservableObject {
         let selectedAtStart = selectedID
         let runtime = library.runtime(for: recipe)
         let keepWineLive = snapshot.wineSessionLive
+        let keepSteam = snapshot.steamReady
         let keepGame = snapshot.gameRunning
         DispatchQueue.global(qos: .utility).async {
-            let filesOnly = runtime.fileSnapshot(wineSessionLive: keepWineLive, gameRunning: keepGame)
+            let filesOnly = runtime.fileSnapshot(
+                wineSessionLive: keepWineLive,
+                steamReady: keepSteam,
+                gameRunning: keepGame
+            )
             DispatchQueue.main.async {
                 guard self.selectedID == selectedAtStart else { return }
                 self.snapshot = LibrarySnapshot.display(filesOnly, activity: self.activity, busy: self.busy)
@@ -316,29 +394,45 @@ final class LibraryModel: ObservableObject {
         statusLines = []
         appendStatus("Working: \(action.rawValue)")
         backgroundReady = false
+        // Keep raising Steam past the click — the clicked app otherwise stays frontmost.
+        if Self.steamDialogActions.contains(action) {
+            startSteamRaisePulse(wine: library.wine)
+        } else if Self.steamFrontActions.contains(action) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                WorkspaceFrontmost().bringToFront(executable: library.wine)
+            }
+        }
         let gameID = selected?.id ?? Recipe.onboarding.id
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try library.perform(action, gameID: gameID)
                 DispatchQueue.main.async {
+                    self.stopSteamRaisePulse()
                     self.busy = false
                     self.activity = ""
                     self.backgroundReady = true
                     self.applySelectedFileStatus()
                     self.refreshInstalled()
                     self.refresh()
-                    if action == .play, let selected = self.selected, selected.launchesDirectly {
-                        WorkspaceFrontmost().bringGameWindowToFront(
-                            executable: library.wine,
-                            windowName: selected.title,
-                            timeout: 5
-                        )
-                    } else if [.steam, .play, .setup, .install].contains(action) {
-                        WorkspaceFrontmost().bringToFront(executable: library.wine)
+                    let wine = library.wine
+                    let raiseGame = action == .play && self.selected?.launchesDirectly == true
+                    let gameTitle = self.selected?.title
+                    // Defer past UI refresh so Silicon Cellar does not immediately steal focus back.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        if raiseGame, let gameTitle {
+                            WorkspaceFrontmost().bringGameWindowToFront(
+                                executable: wine,
+                                windowName: gameTitle,
+                                timeout: 5
+                            )
+                        } else if Self.steamFrontActions.contains(action) {
+                            WorkspaceFrontmost().bringToFront(executable: wine)
+                        }
                     }
                 }
             } catch {
                 DispatchQueue.main.async {
+                    self.stopSteamRaisePulse()
                     self.busy = false
                     self.activity = ""
                     self.backgroundReady = false
@@ -347,6 +441,10 @@ final class LibraryModel: ObservableObject {
                     self.applySelectedFileStatus()
                     self.refreshInstalled()
                     self.refresh()
+                    // Sign-in / Steam errors still need the Steam window visible.
+                    if Self.steamFrontActions.contains(action) {
+                        WorkspaceFrontmost().bringToFront(executable: library.wine)
+                    }
                 }
             }
         }
@@ -511,17 +609,28 @@ struct LibraryView: View {
                 } ?? "Install the Steam client. Select a game after you sign in."
             )
             .foregroundStyle(.secondary)
+        } else if !model.snapshot.wineSessionLive {
+            Text("Start Steam, then continue with the next steps.")
+                .foregroundStyle(.secondary)
+        } else if !model.snapshot.steamReady {
+            Text("Wait until Steam finishes starting.")
+                .foregroundStyle(.secondary)
         } else if !model.snapshot.isSignedIn {
             Text(
                 title.map {
-                    "Open Steam and sign in with an account that owns \($0)."
-                } ?? "Open Steam and sign in in the Steam window."
+                    "Sign in with an account that owns \($0)."
+                } ?? "Sign in in the Steam window."
             )
             .foregroundStyle(.secondary)
         } else if !includeGame {
             Text("Steam sign-in is complete. Select a game in the list.")
                 .foregroundStyle(.secondary)
         }
+
+        let steamInstalled = !model.snapshot.needsSetup
+        let sessionLive = model.snapshot.wineSessionLive
+        let steamUp = model.snapshot.steamReady
+        let signedIn = model.snapshot.isSignedIn
 
         if model.snapshot.needsSetup {
             splitStep(
@@ -534,11 +643,22 @@ struct LibraryView: View {
             ) {
                 model.run(.setup)
             }
-        } else if model.snapshot.wineSessionLive {
+        } else if steamUp {
             splitStep(
                 1,
                 status: "Steam is running",
                 done: true,
+                actionTitle: "Stop Steam",
+                actionColor: StepColor.danger,
+                enabled: true
+            ) {
+                model.stopSteamSession()
+            }
+        } else if sessionLive {
+            splitStep(
+                1,
+                status: "Steam is starting…",
+                done: false,
                 actionTitle: "Stop Steam",
                 actionColor: StepColor.danger,
                 enabled: true
@@ -558,14 +678,14 @@ struct LibraryView: View {
             }
         }
 
-        if model.snapshot.isSignedIn {
+        if signedIn {
             splitStep(
                 2,
                 status: "Signed in",
                 done: true,
                 actionTitle: "Sign out of Steam",
                 actionColor: StepColor.danger,
-                enabled: true
+                enabled: steamUp
             ) {
                 model.run(.logout)
             }
@@ -576,7 +696,7 @@ struct LibraryView: View {
                 done: false,
                 actionTitle: "Sign in",
                 actionColor: StepColor.signIn,
-                enabled: !model.snapshot.needsSetup && !model.busy
+                enabled: steamInstalled && steamUp && !model.busy
             ) {
                 model.run(.steam)
             }
@@ -592,11 +712,12 @@ struct LibraryView: View {
                     actionColor: StepColor.install,
                     enabled: false
                 ) {}
+                // Stop ends the Steam session and cancels the install — not a running game.
                 splitStep(
                     4,
-                    status: "Game is not running",
+                    status: "Not ready to play",
                     done: false,
-                    actionTitle: "Stop",
+                    actionTitle: "Stop Steam",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
@@ -613,9 +734,9 @@ struct LibraryView: View {
                 ) {}
                 splitStep(
                     4,
-                    status: "Game is not running",
+                    status: "Not ready to play",
                     done: false,
-                    actionTitle: "Stop",
+                    actionTitle: "Stop Steam",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
@@ -628,7 +749,7 @@ struct LibraryView: View {
                     done: true,
                     actionTitle: "Uninstall",
                     actionColor: StepColor.danger,
-                    enabled: true
+                    enabled: steamUp && signedIn
                 ) {
                     model.run(.uninstall)
                 }
@@ -646,47 +767,44 @@ struct LibraryView: View {
                 } else {
                     splitStep(
                         4,
-                        status: "Ready to play",
+                        status: steamUp ? "Ready to play" : "Start Steam to play",
                         done: false,
                         actionTitle: "Play",
                         actionColor: StepColor.play,
-                        enabled: true
+                        enabled: steamUp
                     ) {
                         model.run(.play)
                     }
                 }
             } else {
+                let installReady = steamUp && signedIn
+                let installHint =
+                    installReady
+                    ? "Game is not installed"
+                    : sessionLive && !steamUp
+                        ? "Wait until Steam finishes starting"
+                        : steamUp
+                            ? "Sign in before you install"
+                            : "Start Steam before you install"
                 splitStep(
                     3,
-                    status: "Game is not installed",
+                    status: installHint,
                     done: false,
                     actionTitle: "Install game",
                     actionColor: StepColor.install,
-                    enabled: model.snapshot.isSignedIn
+                    enabled: installReady
                 ) {
                     model.run(.install)
                 }
-                if model.snapshot.wineSessionLive {
-                    splitStep(
-                        4,
-                        status: "Game is not running",
-                        done: false,
-                        actionTitle: "Stop",
-                        actionColor: StepColor.danger,
-                        enabled: true
-                    ) {
-                        model.run(.stop)
-                    }
-                } else {
-                    splitStep(
-                        4,
-                        status: "Not ready to play",
-                        done: false,
-                        actionTitle: "Play",
-                        actionColor: StepColor.play,
-                        enabled: false
-                    ) {}
-                }
+                // Stop Steam stays on step 1. Step 4 is play readiness only.
+                splitStep(
+                    4,
+                    status: "Not ready to play",
+                    done: false,
+                    actionTitle: "Play",
+                    actionColor: StepColor.play,
+                    enabled: false
+                ) {}
             }
         }
     }

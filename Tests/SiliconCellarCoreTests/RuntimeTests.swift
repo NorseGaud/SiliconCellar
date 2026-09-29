@@ -2,7 +2,7 @@ import XCTest
 
 @testable import SiliconCellarCore
 
-final class FakeCommands: CommandRunning {
+final class FakeCommands: CommandRunning, @unchecked Sendable {
     var live = false
     var started: [(URL, [String])] = []
     var files: FileSystem = FoundationFileSystem()
@@ -140,7 +140,7 @@ final class FakeSteamClient: SteamClientInspecting, @unchecked Sendable {
     func isRunning(prefix: URL) -> Bool { ignoreStarts ? false : running }
 }
 
-final class FakeHungPSCommands: CommandRunning {
+final class FakeHungPSCommands: CommandRunning, @unchecked Sendable {
     var ran: [(URL, [String])] = []
 
     func run(
@@ -350,15 +350,16 @@ final class RuntimeTests: XCTestCase {
         XCTAssertTrue(request.contains("steam://install/480"))
     }
 
-    func testInstallSendsURIBeforeWaitingForSteamClient() throws {
+    func testInstallWaitsForSteamClientBeforeURI() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
         try env.runtime.setup()
         try writeSignedIn(env)
-        env.steamClient.ignoreStarts = true
-        env.runtime.steamClientWait = 0
         env.commands.finishSteamInstallOnStart = true
         env.runtime.installPollInterval = 0
+        // Force a fresh Steam start so we can assert wait-before-URI order.
+        env.steamClient.running = false
+        env.commands.live = false
         env.commands.started.removeAll()
         env.frontmost.activated.removeAll()
         env.frontmost.steamUIActivated.removeAll()
@@ -374,10 +375,36 @@ final class RuntimeTests: XCTestCase {
                 arguments.contains("steam://install/480")
             })
         )
+        // Desktop Steam must start before the install URI, or Steam drops the request.
         XCTAssertLessThan(steamIndex, uriIndex)
         XCTAssertTrue(env.sink.messages.contains(where: { $0.contains("Install requested") }))
-        XCTAssertEqual(env.frontmost.activated, [env.runtime.wine])
-        XCTAssertTrue(env.frontmost.steamUIActivated.isEmpty)
+        XCTAssertEqual(env.frontmost.activated.first, env.runtime.wine)
+        let pollDeadline = Date().addingTimeInterval(1)
+        while env.frontmost.steamUIActivated.isEmpty, Date() < pollDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(env.frontmost.steamUIActivated.map(\.0), [env.runtime.wine])
+        XCTAssertEqual(env.frontmost.steamUIActivated.map(\.1), [30])
+    }
+
+    func testInstallFailsWhenSteamNeverOpens() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        try writeSignedIn(env)
+        env.steamClient.ignoreStarts = true
+        env.commands.live = false
+        env.runtime.steamClientWait = 0
+        env.commands.finishSteamInstallOnStart = true
+        XCTAssertThrowsError(try env.runtime.installGame()) { error in
+            let message = (error as? PortError)?.message ?? ""
+            XCTAssertTrue(message.contains("Steam did not open"), message)
+        }
+        XCTAssertFalse(
+            env.commands.started.contains(where: { _, arguments in
+                arguments.contains(where: { $0.hasPrefix("steam://install/") })
+            })
+        )
     }
 
     func testInstallFailsWhenSteamExitsBeforeFiles() throws {
@@ -550,7 +577,14 @@ final class RuntimeTests: XCTestCase {
             C:\\Program Files (x86)\\Steam\\bin\\cef\\steamwebhelper.exe --type=gpu
             """
         XCTAssertTrue(SteamClientProcess.isRunning(in: list, prefix: prefix))
+        XCTAssertTrue(SteamClientProcess.isFullyRunning(in: list, prefix: prefix))
         XCTAssertFalse(SteamClientProcess.isRunning(in: "steamwebhelper.exe\n/bin/ps", prefix: prefix))
+        XCTAssertFalse(
+            SteamClientProcess.isFullyRunning(
+                in: "\(prefix.path)/drive_c/Program Files (x86)/Steam/steam.exe -nofriendsui\n/bin/ps",
+                prefix: prefix
+            )
+        )
     }
 
     func testGameProcessDetectsExecutableWithoutMatchingSteam() {
@@ -582,6 +616,74 @@ final class RuntimeTests: XCTestCase {
             workingDirectory: nil
         )
         XCTAssertEqual(output.count, 200_000)
+    }
+
+    func testCommandRunnerRepeatedShortRunsComplete() throws {
+        let runner = ProcessCommandRunner()
+        for _ in 0..<50 {
+            let output = try runner.run(
+                executable: URL(fileURLWithPath: "/bin/echo"),
+                arguments: ["ok"],
+                environment: ["PATH": "/usr/bin:/bin"],
+                timeout: 2,
+                workingDirectory: nil
+            )
+            XCTAssertEqual(output.trimmingCharacters(in: .whitespacesAndNewlines), "ok")
+        }
+    }
+
+    func testCommandRunnerTimeoutCleansUp() throws {
+        let runner = ProcessCommandRunner()
+        let began = Date()
+        XCTAssertThrowsError(
+            try runner.run(
+                executable: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                environment: ["PATH": "/usr/bin:/bin"],
+                timeout: 0.15,
+                workingDirectory: nil
+            )
+        ) { error in
+            XCTAssertTrue(error is TimeoutError)
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(began), 3.0)
+    }
+
+    func testCommandRunnerTimeoutDoesNotLeakPipes() throws {
+        let before = try Self.openPipeFileDescriptorCount()
+        let runner = ProcessCommandRunner()
+        for _ in 0..<40 {
+            XCTAssertThrowsError(
+                try runner.run(
+                    executable: URL(fileURLWithPath: "/bin/sleep"),
+                    arguments: ["60"],
+                    environment: ["PATH": "/usr/bin:/bin"],
+                    timeout: 0.05,
+                    workingDirectory: nil
+                )
+            ) { error in
+                XCTAssertTrue(error is TimeoutError)
+            }
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+        let after = try Self.openPipeFileDescriptorCount()
+        XCTAssertLessThan(
+            after - before,
+            30,
+            "PIPE fds leaked: before=\(before) after=\(after)"
+        )
+    }
+
+    private static func openPipeFileDescriptorCount() throws -> Int {
+        let runner = ProcessCommandRunner()
+        let output = try runner.run(
+            executable: URL(fileURLWithPath: "/usr/sbin/lsof"),
+            arguments: ["-p", String(ProcessInfo.processInfo.processIdentifier), "-F", "t"],
+            environment: ["PATH": "/usr/bin:/bin:/usr/sbin"],
+            timeout: 5,
+            workingDirectory: nil
+        )
+        return output.split(whereSeparator: \.isNewline).filter { $0 == "tPIPE" }.count
     }
 
     func testPlayClearsSteamHTMLCache() throws {
@@ -621,6 +723,76 @@ final class RuntimeTests: XCTestCase {
         XCTAssertTrue(env.commands.lastStartEnvironment["WINEDLLOVERRIDES"]?.contains("winedbg.exe=d") == true)
     }
 
+    /// Regression: Steam updates can replace a wrapped helper with a new unmarked Valve binary
+    /// (seen with cef.win64). Re-wrap must restore SCWRAP1 or the login UI stays black.
+    func testEnsureSteamWebHelperWrapperRewrapsAfterSteamUpdate() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        env.runtime.steamWebHelperWrapper = Data("SCWRAP1-v1".utf8)
+        let cef = env.runtime.steamLibrary.appendingPathComponent("bin/cef/cef.win64")
+        try FileManager.default.createDirectory(at: cef, withIntermediateDirectories: true)
+        let helper = cef.appendingPathComponent("steamwebhelper.exe")
+        let valve = cef.appendingPathComponent("steamwebhelper-valve.exe")
+        try Data("valve-old".utf8).write(to: helper)
+        try env.runtime.ensureSteamWebHelperWrapper()
+        XCTAssertEqual(try Data(contentsOf: helper), Data("SCWRAP1-v1".utf8))
+        XCTAssertEqual(try Data(contentsOf: valve), Data("valve-old".utf8))
+
+        // Simulate Steam client update overwriting the wrapper with a new Valve binary.
+        try Data("valve-new-update".utf8).write(to: helper)
+        XCTAssertFalse(SteamWebHelper.containsMarker(try Data(contentsOf: helper)))
+
+        env.runtime.steamWebHelperWrapper = Data("SCWRAP1-v2".utf8)
+        try env.runtime.ensureSteamWebHelperWrapper()
+        XCTAssertEqual(try Data(contentsOf: helper), Data("SCWRAP1-v2".utf8))
+        XCTAssertEqual(try Data(contentsOf: valve), Data("valve-new-update".utf8))
+        XCTAssertTrue(SteamWebHelper.containsMarker(try Data(contentsOf: helper)))
+    }
+
+    /// Regression: a brand-new cef.win64 tree after an older wrap must still get the wrapper.
+    func testEnsureSteamWebHelperWrapperCoversNewCefWin64Directory() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        env.runtime.steamWebHelperWrapper = Data("SCWRAP1-test".utf8)
+        let win7 = env.runtime.steamLibrary.appendingPathComponent("bin/cef/cef.win7x64")
+        try FileManager.default.createDirectory(at: win7, withIntermediateDirectories: true)
+        try Data("valve-win7".utf8).write(to: win7.appendingPathComponent("steamwebhelper.exe"))
+        try env.runtime.ensureSteamWebHelperWrapper()
+        XCTAssertEqual(
+            try Data(contentsOf: win7.appendingPathComponent("steamwebhelper.exe")),
+            Data("SCWRAP1-test".utf8)
+        )
+
+        let win64 = env.runtime.steamLibrary.appendingPathComponent("bin/cef/cef.win64")
+        try FileManager.default.createDirectory(at: win64, withIntermediateDirectories: true)
+        try Data("valve-win64".utf8).write(to: win64.appendingPathComponent("steamwebhelper.exe"))
+        try env.runtime.ensureSteamWebHelperWrapper()
+        XCTAssertEqual(
+            try Data(contentsOf: win64.appendingPathComponent("steamwebhelper.exe")),
+            Data("SCWRAP1-test".utf8)
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: win64.appendingPathComponent("steamwebhelper-valve.exe")),
+            Data("valve-win64".utf8)
+        )
+    }
+
+    func testInspectSessionRewrapsWebHelperWhileSteamLive() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        env.steamClient.running = true
+        env.runtime.steamWebHelperWrapper = Data("SCWRAP1-live".utf8)
+        let cef = env.runtime.steamLibrary.appendingPathComponent("bin/cef/cef.win64")
+        try FileManager.default.createDirectory(at: cef, withIntermediateDirectories: true)
+        let helper = cef.appendingPathComponent("steamwebhelper.exe")
+        try Data("valve-live".utf8).write(to: helper)
+        _ = env.runtime.inspectSession()
+        XCTAssertEqual(try Data(contentsOf: helper), Data("SCWRAP1-live".utf8))
+    }
+
     func testSteamWebHelperWrapperInjectsDisableGPUAndSingleProcess() {
         let bytes = SteamWebHelper.wrapperBytes
         XCTAssertTrue(SteamWebHelper.containsMarker(bytes))
@@ -647,6 +819,45 @@ final class RuntimeTests: XCTestCase {
         XCTAssertTrue(arguments.contains("-cef-disable-gpu"))
         XCTAssertTrue(arguments.contains("-extra"))
         XCTAssertTrue(arguments.contains("-nofriendsui"))
+        XCTAssertTrue(arguments.contains("-noverifyfiles"))
+    }
+
+    func testWineSteamArgumentsCanAllowFileVerifyForBootstrap() {
+        let bootstrap = Runtime.wineSteamArguments([], verifyFiles: true)
+        XCTAssertFalse(bootstrap.contains("-noverifyfiles"))
+        XCTAssertTrue(bootstrap.contains("-nofriendsui"))
+        XCTAssertTrue(bootstrap.contains("-cef-disable-gpu"))
+        let normal = Runtime.wineSteamArguments([])
+        XCTAssertTrue(normal.contains("-noverifyfiles"))
+    }
+
+    func testSetupBootstrapOmitsNoVerifyFiles() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        let steamStart = try XCTUnwrap(
+            env.commands.started.first(where: { _, arguments in
+                arguments.contains(where: { $0.lowercased().hasSuffix("steam.exe") })
+            })
+        )
+        XCTAssertFalse(
+            steamStart.1.contains("-noverifyfiles"),
+            "Bootstrap must verify/download the client so steamui.dll arrives."
+        )
+    }
+
+    func testOpenSteamKeepsNoVerifyFilesAfterBootstrap() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        env.commands.started.removeAll()
+        try env.runtime.openSteam(play: false)
+        let steamStart = try XCTUnwrap(
+            env.commands.started.first(where: { _, arguments in
+                arguments.contains(where: { $0.lowercased().hasSuffix("steam.exe") })
+            })
+        )
+        XCTAssertTrue(steamStart.1.contains("-noverifyfiles"))
     }
 
     func testPlayPromotesNestedManifest() throws {

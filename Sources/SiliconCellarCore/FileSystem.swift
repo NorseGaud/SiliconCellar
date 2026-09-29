@@ -9,6 +9,7 @@ public protocol FileSystem {
     func moveItem(from: URL, to: URL) throws
     func contentsOfDirectory(_ url: URL) throws -> [URL]
     func isSymbolicLink(_ url: URL) -> Bool
+    func setExecutable(_ url: URL) throws
 }
 
 public struct FoundationFileSystem: FileSystem {
@@ -37,5 +38,13 @@ public struct FoundationFileSystem: FileSystem {
 
     public func isSymbolicLink(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+    }
+
+    public func setExecutable(_ url: URL) throws {
+        var attributes = try manager.attributesOfItem(atPath: url.path)
+        let current = attributes[.posixPermissions] as? NSNumber
+        let mode = (current?.uint16Value ?? 0o644) | 0o111
+        attributes[.posixPermissions] = NSNumber(value: mode)
+        try manager.setAttributes(attributes, ofItemAtPath: url.path)
     }
 }

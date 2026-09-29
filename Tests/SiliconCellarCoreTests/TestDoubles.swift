@@ -2,7 +2,7 @@ import Foundation
 
 @testable import SiliconCellarCore
 
-final class ScriptedCommands: CommandRunning {
+final class ScriptedCommands: CommandRunning, @unchecked Sendable {
     enum Outcome {
         case success(String)
         case failure(String)
@@ -49,4 +49,5 @@ final class MemoryFiles: FileSystem {
     }
     func contentsOfDirectory(_ url: URL) throws -> [URL] { [] }
     func isSymbolicLink(_ url: URL) -> Bool { false }
+    func setExecutable(_ url: URL) throws {}
 }

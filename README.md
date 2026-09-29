@@ -6,6 +6,12 @@
 
 Run Windows Steam games that you own on Apple Silicon. The app bundles Wine Staging. It does not include game files or a game license.
 
+> **Limited time.** macOS warns that support for Intel-based apps is ending. Silicon Cellar bundles Wine Staging, which still runs as Intel code under Rosetta. Enjoy it while you can.
+>
+> <p align="center">
+>   <img src="images/ending-support-intel.png" alt="macOS alert: Support Ending for Intel-based Apps" width="480">
+> </p>
+
 ## What you need
 
 - An Apple Silicon Mac
