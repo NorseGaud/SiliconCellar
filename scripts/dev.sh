@@ -10,15 +10,7 @@ pid=""
 
 stop_wine() {
     echo "Stopping Wine / Steam session…"
-    # wineserver -k can Abort (trap 6) when Engine libs are mid-replace or already dying.
-    # Kill by path instead — Wine keeps Engine dylibs open after the app exits.
-    pkill -TERM -f "SiliconCellar[.]app/Contents/Resources/Engine/.*/wineserver" 2>/dev/null || true
-    pkill -TERM -f "[.]build/engine/bin/wineserver" 2>/dev/null || true
-    # Give processes time to drop file locks before we replace Engine.
-    sleep 0.8
-    pkill -KILL -f "SiliconCellar[.]app/Contents/Resources/Engine/.*/wineserver" 2>/dev/null || true
-    pkill -KILL -f "[.]build/engine/bin/wineserver" 2>/dev/null || true
-    # Best-effort clean stop when the binary and libs are still intact.
+    # 1) Ask wineserver to end the whole prefix (best clean stop).
     wineserver=""
     engine_lib=""
     if [ -x "$DEV_APP/Contents/Resources/Engine/bin/wineserver" ]; then
@@ -32,15 +24,39 @@ stop_wine() {
         DYLD_FALLBACK_LIBRARY_PATH="$engine_lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}" \
             WINEPREFIX="$PREFIX" "$wineserver" -k >/dev/null 2>&1 || true
     fi
+    # 2) Force-kill leftovers. After wineserver dies, Steam often stays as ppid-1
+    #    orphans whose argv looks like Windows paths (no Engine path in the string).
+    kill_matching_pids() {
+        signal="$1"
+        ps -ax -o pid=,command= 2>/dev/null | awk '
+            /SiliconCellar\/prefix/ { print $1; next }
+            /SiliconCellar\.app\/Contents\/Resources\/Engine/ { print $1; next }
+            /\.build\/engine\/(bin|lib)\// { print $1; next }
+            /steam\.exe -nofriendsui -nochatui -noverifyfiles/ { print $1; next }
+            /steamwebhelper(-valve)?\.exe/ { print $1; next }
+            /winedevice\.exe/ { print $1; next }
+        ' | while IFS= read -r kill_pid; do
+            [ -n "$kill_pid" ] || continue
+            kill "-$signal" "$kill_pid" 2>/dev/null || true
+        done
+    }
+    kill_matching_pids TERM
+    sleep 0.8
+    kill_matching_pids KILL
+    sleep 0.3
 }
 
+# Restart app only — keep Wine/Steam alive across file-change rebuilds.
 stop_app() {
     if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
     pid=""
-    # Wine keeps Engine dylibs open after the app exits — stop it before we replace Engine.
+}
+
+stop_all() {
+    stop_app
     stop_wine
 }
 
@@ -76,25 +92,45 @@ build_app() {
     return 1
 }
 
+copy_engine() {
+    ENGINE_SRC="$ROOT/.build/engine"
+    if [ ! -x "$ENGINE_SRC/bin/wine" ]; then
+        return 0
+    fi
+    rm -rf "$DEV_APP/Contents/Resources/Engine"
+    mkdir -p "$DEV_APP/Contents/Resources/Engine"
+    if ! cp -R "$ENGINE_SRC"/. "$DEV_APP/Contents/Resources/Engine"/; then
+        echo "Could not copy Engine into the app bundle (is Wine still running?)."
+        return 1
+    fi
+    return 0
+}
+
+# Usage: start_app first | reload
+# first  — kill Wine/Steam leftovers, copy Engine, launch
+# reload — keep Wine/Steam, refresh app binary only
 start_app() {
+    mode="${1:-reload}"
     echo "Building SiliconCellar…"
     if ! build_app; then
         echo "Build failed. The last window stays open if it is still running."
         return 0
     fi
     stop_app
+    if [ "$mode" = "first" ]; then
+        stop_wine
+    fi
     write_app_bundle "$DEV_APP" "$(swift build --show-bin-path)/SiliconCellar" com.norsegaud.siliconcellar.dev
     if [ $? -ne 0 ]; then
         echo "Could not write $DEV_APP."
         return 0
     fi
-    ENGINE_SRC="$ROOT/.build/engine"
-    if [ -x "$ENGINE_SRC/bin/wine" ]; then
-        # stop_app already killed Wine; replace Engine without "Operation not permitted".
-        rm -rf "$DEV_APP/Contents/Resources/Engine"
-        mkdir -p "$DEV_APP/Contents/Resources/Engine"
-        if ! cp -R "$ENGINE_SRC"/. "$DEV_APP/Contents/Resources/Engine"/; then
-            echo "Could not copy Engine into the app bundle (is Wine still running?)."
+    if [ "$mode" = "first" ] || [ ! -x "$DEV_APP/Contents/Resources/Engine/bin/wine" ]; then
+        if [ "$mode" != "first" ]; then
+            # Engine missing mid-session — must stop Wine to replace it safely.
+            stop_wine
+        fi
+        if ! copy_engine; then
             return 0
         fi
     fi
@@ -103,9 +139,9 @@ start_app() {
     pid=$!
 }
 
-trap 'stop_app; exit 0' INT TERM
+trap 'stop_all; exit 0' INT TERM
 
-start_app
+start_app first
 stamp="$(source_stamp)"
 echo "Watching Sources for changes. Ctrl+C stops."
 while true; do
@@ -115,7 +151,7 @@ while true; do
         echo "Files changed. Waiting 5s for edits to settle…"
         sleep 5
         stamp="$(wait_until_stable)"
-        start_app
+        start_app reload
     fi
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
         echo "The app exited. Waiting for the next file change."

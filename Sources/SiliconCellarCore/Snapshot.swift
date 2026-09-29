@@ -19,6 +19,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
     public var wineSessionLive: Bool
     /// Steam.exe (and UI helper) are up — stronger than wineserver alone.
     public var steamReady: Bool
+    /// A Wine/Steam window is on screen (not only processes).
+    public var steamWindowVisible: Bool
     public var gameRunning: Bool
 
     public init(
@@ -26,12 +28,14 @@ public struct LibrarySnapshot: Equatable, Sendable {
         downloadFraction: Double? = nil,
         wineSessionLive: Bool = false,
         steamReady: Bool = false,
+        steamWindowVisible: Bool = false,
         gameRunning: Bool = false
     ) {
         self.stage = stage
         self.downloadFraction = downloadFraction
         self.wineSessionLive = wineSessionLive
         self.steamReady = steamReady
+        self.steamWindowVisible = steamWindowVisible
         self.gameRunning = gameRunning
     }
 
@@ -39,6 +43,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
     public var isSignedIn: Bool { stage != .setup && stage != .signIn }
     public var isInstalled: Bool { stage == .ready || stage == .running }
     public var isRunning: Bool { stage == .running || gameRunning }
+    /// Processes up and a Steam/Wine window is visible.
+    public var steamIsUp: Bool { steamReady && steamWindowVisible }
 
     public static func display(_ snapshot: LibrarySnapshot, activity: String, busy: Bool) -> LibrarySnapshot {
         guard busy else { return snapshot }
@@ -51,6 +57,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 downloadFraction: snapshot.downloadFraction,
                 wineSessionLive: snapshot.wineSessionLive,
                 steamReady: snapshot.steamReady,
+                steamWindowVisible: snapshot.steamWindowVisible,
                 gameRunning: false
             )
         }
@@ -59,6 +66,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: snapshot.isInstalled || snapshot.stage == .running ? .ready : snapshot.stage,
                 wineSessionLive: snapshot.wineSessionLive,
                 steamReady: snapshot.steamReady,
+                steamWindowVisible: snapshot.steamWindowVisible,
                 gameRunning: false
             )
         }
@@ -75,6 +83,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
         installFolder: String,
         wineSessionLive: Bool,
         steamReady: Bool = false,
+        steamWindowVisible: Bool = false,
         gameRunning: Bool = false,
         now: Date = Date(),
         files: FileSystem = FoundationFileSystem()
@@ -88,11 +97,17 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: gameRunning ? .running : .ready,
                 wineSessionLive: wineSessionLive,
                 steamReady: steamReady,
+                steamWindowVisible: steamWindowVisible,
                 gameRunning: gameRunning
             )
         }
         guard runtimeReady || signedIn else {
-            return LibrarySnapshot(stage: .setup, wineSessionLive: wineSessionLive, steamReady: steamReady)
+            return LibrarySnapshot(
+                stage: .setup,
+                wineSessionLive: wineSessionLive,
+                steamReady: steamReady,
+                steamWindowVisible: steamWindowVisible
+            )
         }
         if flags != 4 && total > 0 {
             let modified = manifest.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]) }?.contentModificationDate
@@ -105,12 +120,23 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .downloading,
                 downloadFraction: fresh && valid ? downloaded / total : nil,
                 wineSessionLive: wineSessionLive,
-                steamReady: steamReady
+                steamReady: steamReady,
+                steamWindowVisible: steamWindowVisible
             )
         }
         if signedIn {
-            return LibrarySnapshot(stage: .install, wineSessionLive: wineSessionLive, steamReady: steamReady)
+            return LibrarySnapshot(
+                stage: .install,
+                wineSessionLive: wineSessionLive,
+                steamReady: steamReady,
+                steamWindowVisible: steamWindowVisible
+            )
         }
-        return LibrarySnapshot(stage: .signIn, wineSessionLive: wineSessionLive, steamReady: steamReady)
+        return LibrarySnapshot(
+            stage: .signIn,
+            wineSessionLive: wineSessionLive,
+            steamReady: steamReady,
+            steamWindowVisible: steamWindowVisible
+        )
     }
 }

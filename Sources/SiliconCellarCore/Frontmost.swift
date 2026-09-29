@@ -137,11 +137,12 @@ public struct WorkspaceFrontmost: FrontmostActivating {
     }
 
     public func bringSteamUIToFront(executable: URL, timeout: TimeInterval) {
-        let deadline = Date().addingTimeInterval(timeout)
+        // Raise until a Wine window appears, then stop. Do not keep stealing focus for the
+        // full timeout after the user returns to Silicon Cellar.
+        let deadline = Date().addingTimeInterval(min(timeout, 8))
         while Date() < deadline {
             _ = activateNow(executable: executable)
-            // On-screen windows can still sit behind Silicon Cellar — require Wine frontmost.
-            if SteamUIFocus.isWineFrontmost(for: executable) { break }
+            if SteamUIFocus.hasVisibleWineWindow(for: executable) { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
         WineTerminal.closeStagingSessions()

@@ -4,6 +4,8 @@ import XCTest
 
 final class FakeCommands: CommandRunning, @unchecked Sendable {
     var live = false
+    /// Path included in fake `ps` output when `live` is true (session detection).
+    var wineserverPath = ""
     var started: [(URL, [String])] = []
     var files: FileSystem = FoundationFileSystem()
     var installerBytes = Data("unused".utf8)
@@ -30,6 +32,12 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
         workingDirectory: URL?
     ) throws -> String {
         ran.append((executable.lastPathComponent, arguments, environment["WINEPREFIX"]))
+        if executable.path == "/bin/ps" || executable.lastPathComponent == "ps" {
+            if live, !wineserverPath.isEmpty {
+                return "\(wineserverPath)\n/bin/ps\n"
+            }
+            return "/bin/ps\n"
+        }
         if executable.lastPathComponent == "wineserver", arguments == ["-w"] {
             if live { throw TimeoutError() }
             return ""
@@ -194,7 +202,11 @@ final class RuntimeTests: XCTestCase {
         env.frontmost.activated.removeAll()
         env.frontmost.steamUIActivated.removeAll()
         try env.runtime.openSteam(play: false)
-        XCTAssertEqual(env.frontmost.activated, [env.runtime.wine])
+        XCTAssertEqual(env.frontmost.activated.first, env.runtime.wine)
+        let pollDeadline = Date().addingTimeInterval(1)
+        while env.frontmost.steamUIActivated.isEmpty, Date() < pollDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
         XCTAssertEqual(env.frontmost.steamUIActivated.map(\.0), [env.runtime.wine])
     }
 
@@ -585,6 +597,13 @@ final class RuntimeTests: XCTestCase {
                 prefix: prefix
             )
         )
+        // Dying Wine orphans often show Windows-only paths with no Silicon Cellar prefix.
+        XCTAssertFalse(
+            SteamClientProcess.isRunning(
+                in: #"C:\Program Files (x86)\Steam\steam.exe -nofriendsui -nochatui"# + "\n/bin/ps",
+                prefix: prefix
+            )
+        )
     }
 
     func testGameProcessDetectsExecutableWithoutMatchingSteam() {
@@ -902,13 +921,31 @@ final class RuntimeTests: XCTestCase {
         XCTAssertFalse(filesOnly.wineSessionLive)
     }
 
-    func testIsSessionLiveUsesSteamClientWithoutWaitingOnWineserver() throws {
+    func testIsSessionLiveUsesWineserverProcessNotOrphanSteam() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
         env.steamClient.running = true
+        env.commands.live = false
+        env.commands.ran.removeAll()
+        XCTAssertFalse(env.runtime.isSessionLive)
+        XCTAssertTrue(env.commands.ran.contains(where: { $0.name == "ps" }))
+        env.commands.live = true
         env.commands.ran.removeAll()
         XCTAssertTrue(env.runtime.isSessionLive)
-        XCTAssertFalse(env.commands.ran.contains(where: { $0.name == "wineserver" && $0.arguments == ["-w"] }))
+        XCTAssertTrue(
+            WineSessionProcess.isWineserverRunning(
+                in: "\(env.runtime.wineserver.path)\n/bin/ps",
+                wineserver: env.runtime.wineserver
+            )
+        )
+        // ps often shows lib/wine/../../bin/wineserver — must still match.
+        let engine = env.runtime.wineserver.deletingLastPathComponent().deletingLastPathComponent()
+        XCTAssertTrue(
+            WineSessionProcess.isWineserverRunning(
+                in: "\(engine.path)/lib/wine/../../bin/wineserver\n/bin/ps",
+                wineserver: env.runtime.wineserver
+            )
+        )
     }
 
     func testSingleSessionLock() throws {
@@ -1020,6 +1057,7 @@ final class RuntimeTests: XCTestCase {
         let frontmost = RecordingFrontmost()
         let steamClient = FakeSteamClient()
         commands.steamClient = steamClient
+        commands.wineserverPath = wineserver.path
         let runtime = Runtime(
             recipe: recipe,
             root: root,

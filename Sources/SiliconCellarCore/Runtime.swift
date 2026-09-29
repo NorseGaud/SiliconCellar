@@ -88,23 +88,12 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public var isSessionLive: Bool {
-        if steamClient.isRunning(prefix: prefix) { return true }
-        guard files.fileExists(wineserver), files.fileExists(prefix) else { return false }
-        do {
-            // Short wait: when Wine is live, -w blocks until timeout. 1.5s made every UI refresh feel stuck.
-            _ = try commands.run(
-                executable: wineserver,
-                arguments: ["-w"],
-                environment: wineEnvironment(),
-                timeout: 0.2,
-                workingDirectory: nil
-            )
-            return false
-        } catch is TimeoutError {
-            return true
-        } catch {
+        // Never call `wineserver -w` for polling — a cold launch often exceeds the short
+        // timeout and falsely reports live, flipping Start Steam ↔ Steam is running.
+        guard let text = ProcessSteamClientInspector.processList(commands: commands) else {
             return false
         }
+        return WineSessionProcess.isWineserverRunning(in: text, wineserver: wineserver)
     }
 
     /// File/manifest check only — does not wait on wineserver.
@@ -126,10 +115,13 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func snapshot(now: Date = Date()) -> LibrarySnapshot {
-        fileSnapshot(
+        let live = isSessionLive
+        let ready = live && steamClient.isFullyRunning(prefix: prefix)
+        return fileSnapshot(
             now: now,
-            wineSessionLive: isSessionLive,
-            steamReady: steamClient.isFullyRunning(prefix: prefix),
+            wineSessionLive: live,
+            steamReady: ready,
+            steamWindowVisible: ready && SteamUIFocus.hasVisibleWineWindow(for: wine),
             gameRunning: isGameRunning
         )
     }
@@ -139,6 +131,7 @@ public final class Runtime: @unchecked Sendable {
         now: Date = Date(),
         wineSessionLive: Bool = false,
         steamReady: Bool = false,
+        steamWindowVisible: Bool = false,
         gameRunning: Bool = false
     ) -> LibrarySnapshot {
         LibrarySnapshot.inspect(
@@ -151,6 +144,7 @@ public final class Runtime: @unchecked Sendable {
             installFolder: recipe.installFolder,
             wineSessionLive: wineSessionLive,
             steamReady: steamReady,
+            steamWindowVisible: steamWindowVisible,
             gameRunning: gameRunning,
             now: now,
             files: files
@@ -172,12 +166,20 @@ public final class Runtime: @unchecked Sendable {
 
     public func inspectSession(now: Date = Date()) -> (LibrarySnapshot, SteamLaunchProgress) {
         let live = isSessionLive
-        let ready = steamClient.isFullyRunning(prefix: prefix)
+        // Steam ready only while wineserver is live — ignore dying steam.exe orphans.
+        let ready = live && steamClient.isFullyRunning(prefix: prefix)
+        let windowVisible = ready && SteamUIFocus.hasVisibleWineWindow(for: wine)
         let running = isGameRunning
         // Steam client updates can drop a new cef.win64 helper mid-session; keep the wrap applied.
         if live { try? ensureSteamWebHelperWrapper() }
         return (
-            fileSnapshot(now: now, wineSessionLive: live, steamReady: ready, gameRunning: running),
+            fileSnapshot(
+                now: now,
+                wineSessionLive: live,
+                steamReady: ready,
+                steamWindowVisible: windowVisible,
+                gameRunning: running
+            ),
             launchProgress(wineSessionLive: live)
         )
     }
@@ -398,24 +400,22 @@ public final class Runtime: @unchecked Sendable {
         if directPlay {
             try startDirectGame(hud: hud, log: log)
         }
-        // Install/uninstall must not block on a long focus poll — waitForInstall needs to run.
-        // Raise immediately, then keep polling Steam UI on a side queue.
-        if install || uninstall {
+        // Focus must not block the UI thread of work — a 30s poll kept status on "Working: steam"
+        // while Steam was already open. Raise async for all Steam UI paths.
+        if install || uninstall || !directPlay {
             let front = frontmost
             let wineURL = wine
             front.bringToFront(executable: wineURL)
             DispatchQueue.global(qos: .userInitiated).async {
                 front.bringSteamUIToFront(executable: wineURL, timeout: 30)
             }
-        } else if directPlay {
+        } else {
             // Game must be frontmost so Wine can hide the host cursor.
             frontmost.bringGameWindowToFront(
                 executable: wine,
                 windowName: recipe.title,
                 timeout: 20
             )
-        } else {
-            frontmost.bringSteamUIToFront(executable: wine, timeout: 30)
         }
         sink.say(
             play
@@ -611,7 +611,7 @@ public final class Runtime: @unchecked Sendable {
             timeout: 30,
             workingDirectory: nil
         )
-        sink.say("Stopped Steam for \(recipe.title).")
+        sink.say("Stopped Steam.")
     }
 
     public func stopGame() throws {
@@ -974,12 +974,32 @@ public enum GameProcess {
     }
 }
 
+public enum WineSessionProcess {
+    /// True when our wineserver binary is in the process list (real session, not a poll side effect).
+    public static func isWineserverRunning(in processList: String, wineserver: URL) -> Bool {
+        let resolved = wineserver.resolvingSymlinksInPath().path
+        let raw = wineserver.path
+        // Engine root: …/Engine/bin/wineserver → …/Engine
+        let engineRoot = wineserver.deletingLastPathComponent().deletingLastPathComponent().path
+        return processList.split(whereSeparator: \.isNewline).contains { line in
+            let command = String(line)
+            if command.contains(raw) || command.contains(resolved) { return true }
+            // ps often shows: …/Engine/lib/wine/../../bin/wineserver (no "Engine/bin" substring).
+            return command.contains("wineserver")
+                && !engineRoot.isEmpty
+                && command.contains(engineRoot)
+        }
+    }
+}
+
 public enum SteamClientProcess {
     public static func isRunning(in processList: String, prefix: URL) -> Bool {
-        processList.split(whereSeparator: \.isNewline).contains { line in
+        let prefixPath = prefix.path
+        return processList.split(whereSeparator: \.isNewline).contains { line in
             let command = String(line)
-            return isSteamClient(command)
-                && (command.contains(prefix.path) || command.localizedCaseInsensitiveContains("steam.exe"))
+            // Require the Silicon Cellar prefix path. Matching bare "steam.exe" also hits
+            // dying Wine orphans (Windows-only argv) and briefly flashes "Steam is running".
+            return isSteamClient(command) && command.contains(prefixPath)
         }
     }
 
