@@ -295,10 +295,15 @@ final class LibraryModel: ObservableObject {
                 }
                 guard self.selectedID == selectedAtStart else { return }
                 self.snapshot = LibrarySnapshot.display(session.0, activity: self.activity, busy: self.busy)
-                if session.0.steamIsUp {
-                    self.steamUpConfirmations = min(self.steamUpConfirmations + 1, self.steamUpConfirmNeeded)
-                } else {
+                // Window visibility flickers when you switch apps or a game covers Steam.
+                // Once Steam was confirmed up, keep it up while the client process stays ready.
+                if !session.0.steamReady {
                     self.steamUpConfirmations = 0
+                } else if session.0.steamWindowVisible {
+                    self.steamUpConfirmations = min(
+                        self.steamUpConfirmations + 1,
+                        self.steamUpConfirmNeeded
+                    )
                 }
                 if self.installInProgress || self.uninstallInProgress { return }
                 self.applyLaunchProgress(session.1)
@@ -375,13 +380,16 @@ final class LibraryModel: ObservableObject {
                     let raiseGame = action == .play && self.selected?.launchesDirectly == true
                     let gameTitle = self.selected?.title
                     // Defer past UI refresh so Silicon Cellar does not immediately steal focus back.
+                    // Raise on a background queue — a sync poll on main freezes the Play button.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         if raiseGame, let gameTitle {
-                            WorkspaceFrontmost().bringGameWindowToFront(
-                                executable: wine,
-                                windowName: gameTitle,
-                                timeout: 5
-                            )
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                WorkspaceFrontmost().bringGameWindowToFront(
+                                    executable: wine,
+                                    windowName: gameTitle,
+                                    timeout: 15
+                                )
+                            }
                         } else if Self.steamFrontActions.contains(action) {
                             WorkspaceFrontmost().bringToFront(executable: wine)
                         }

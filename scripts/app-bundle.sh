@@ -19,6 +19,8 @@ build_app_icon() (
 )
 
 # write_app_bundle APP_PATH EXECUTABLE BUNDLE_IDENTIFIER [VERSION] [BUILD]
+# Rebuilds the .app wrapper in place. Does not move or delete Contents/Resources/Engine
+# so a live Wine session can keep using those paths across `make dev` reloads.
 write_app_bundle() (
     set -e
     app="$1"
@@ -26,8 +28,13 @@ write_app_bundle() (
     bundle_identifier="$3"
     short_version="${4:-0.1.0}"
     bundle_version="${5:-1}"
-    rm -rf "$app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    # Refresh wrapper only — leave Engine (and anything under it) alone.
+    find "$app/Contents/MacOS" -mindepth 1 -delete 2>/dev/null || true
+    if [ -d "$app/Contents/Resources" ]; then
+        find "$app/Contents/Resources" -mindepth 1 -maxdepth 1 ! -name Engine -exec rm -rf {} +
+    fi
+    rm -f "$app/Contents/Info.plist"
     cp "$executable" "$app/Contents/MacOS/SiliconCellar"
     build_app_icon
     cp "$ICON_CACHE" "$app/Contents/Resources/AppIcon.icns"

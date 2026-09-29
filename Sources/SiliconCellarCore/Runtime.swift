@@ -399,23 +399,28 @@ public final class Runtime: @unchecked Sendable {
         }
         if directPlay {
             try startDirectGame(hud: hud, log: log)
-        }
-        // Focus must not block the UI thread of work — a 30s poll kept status on "Working: steam"
-        // while Steam was already open. Raise async for all Steam UI paths.
-        if install || uninstall || !directPlay {
+            // Tell the UI before any window poll — a 20s raise kept Play busy and delayed this line.
+            sink.say("\(recipe.title) is starting in a Wine desktop.")
             let front = frontmost
             let wineURL = wine
+            let windowName = recipe.title
             front.bringToFront(executable: wineURL)
             DispatchQueue.global(qos: .userInitiated).async {
-                front.bringSteamUIToFront(executable: wineURL, timeout: 30)
+                // Game must be frontmost so Wine can hide the host cursor.
+                front.bringGameWindowToFront(
+                    executable: wineURL,
+                    windowName: windowName,
+                    timeout: 20
+                )
             }
-        } else {
-            // Game must be frontmost so Wine can hide the host cursor.
-            frontmost.bringGameWindowToFront(
-                executable: wine,
-                windowName: recipe.title,
-                timeout: 20
-            )
+            return
+        }
+        // Focus must not block the work queue — a long poll kept status on "Working: …".
+        let front = frontmost
+        let wineURL = wine
+        front.bringToFront(executable: wineURL)
+        DispatchQueue.global(qos: .userInitiated).async {
+            front.bringSteamUIToFront(executable: wineURL, timeout: 30)
         }
         sink.say(
             play
@@ -473,6 +478,9 @@ public final class Runtime: @unchecked Sendable {
             guard let size = display.mainDisplaySize() else {
                 throw PortError("Could not read the display size for \(recipe.title).")
             }
+            // Match the Mac screen. Odd laptop sizes still work for Wine macdrv fullscreen;
+            // forcing a smaller "standard" mode (for example 1920x1200 on 1920x1242) can
+            // leave the game running with no visible window.
             return "\(size.width)x\(size.height)"
         }
         guard let desktop = recipe.virtualDesktopSize else {

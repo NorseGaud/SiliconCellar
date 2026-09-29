@@ -141,7 +141,7 @@ public struct WorkspaceFrontmost: FrontmostActivating {
         // full timeout after the user returns to Silicon Cellar.
         let deadline = Date().addingTimeInterval(min(timeout, 8))
         while Date() < deadline {
-            _ = activateNow(executable: executable)
+            _ = activateNow(executable: executable, raiseLargestWindow: true)
             if SteamUIFocus.hasVisibleWineWindow(for: executable) { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
@@ -156,7 +156,8 @@ public struct WorkspaceFrontmost: FrontmostActivating {
         }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            _ = activateNow(executable: executable)
+            // Do not raise the largest Wine window (often Steam) — that hides the game.
+            _ = activateNow(executable: executable, raiseLargestWindow: false)
             if SteamUIFocus.raiseWineWindow(titled: needle, wineExecutable: executable) { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
@@ -164,7 +165,7 @@ public struct WorkspaceFrontmost: FrontmostActivating {
     }
 
     @discardableResult
-    private func activateNow(executable: URL) -> Bool {
+    private func activateNow(executable: URL, raiseLargestWindow: Bool = true) -> Bool {
         let work = {
             let running = NSWorkspace.shared.runningApplications.map {
                 WineHost.RunningApp(executable: $0.executableURL, bundle: $0.bundleURL)
@@ -179,7 +180,7 @@ public struct WorkspaceFrontmost: FrontmostActivating {
                 _ = app.activate(options: [.activateAllWindows])
                 didActivate = true
             }
-            if didActivate {
+            if didActivate, raiseLargestWindow {
                 _ = SteamUIFocus.raiseVisibleWineWindows(for: executable)
             }
             return didActivate
@@ -235,12 +236,29 @@ public enum SteamUIFocus {
         let wantedPIDs = wineProcessIDs(for: wineExecutable)
         guard !wantedPIDs.isEmpty else { return false }
         let needle = title.lowercased()
-        let windows =
-            CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []
-        let match = windows.first { window in
+        // Glide/D3D games often sit on a non-zero window layer and may start off-screen.
+        if let match = firstWineWindow(titled: needle, in: wantedPIDs, onScreenOnly: true)
+            ?? firstWineWindow(titled: needle, in: wantedPIDs, onScreenOnly: false),
+            let pid = match[kCGWindowOwnerPID as String] as? Int32,
+            let name = match[kCGWindowName as String] as? String
+        {
+            return raiseWindow(pid: pid, name: name)
+        }
+        return false
+    }
+
+    private static func firstWineWindow(
+        titled needle: String,
+        in wantedPIDs: Set<Int32>,
+        onScreenOnly: Bool
+    ) -> [String: Any]? {
+        let options: CGWindowListOption =
+            onScreenOnly
+            ? [.optionOnScreenOnly, .excludeDesktopElements]
+            : [.optionAll, .excludeDesktopElements]
+        let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.first { window in
             guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
-                (window[kCGWindowLayer as String] as? Int) == 0,
                 let name = window[kCGWindowName as String] as? String,
                 name.lowercased().contains(needle),
                 let bounds = window[kCGWindowBounds as String] as? [String: Any]
@@ -249,11 +267,6 @@ public enum SteamUIFocus {
             let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
             return width > 100 && height > 100
         }
-        guard let match,
-            let pid = match[kCGWindowOwnerPID as String] as? Int32,
-            let name = match[kCGWindowName as String] as? String
-        else { return false }
-        return raiseWindow(pid: pid, name: name)
     }
 
     private static func largestVisibleWineWindow(for wineExecutable: URL) -> [String: Any]? {

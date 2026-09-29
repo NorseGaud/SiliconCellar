@@ -541,6 +541,11 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(arguments.first, "explorer")
         XCTAssertTrue(arguments.contains("/desktop=mdk,2560x1440"))
         XCTAssertTrue(arguments.contains(where: { $0.hasSuffix("MDK3DFX.EXE") }))
+        XCTAssertTrue(env.sink.messages.contains(where: { $0.contains("Wine desktop") }))
+        let raiseDeadline = Date().addingTimeInterval(1)
+        while env.frontmost.gameWindows.isEmpty, Date() < raiseDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
         XCTAssertEqual(env.frontmost.gameWindows.first?.1, "MDK")
         XCTAssertFalse(arguments.contains("-applaunch"))
         XCTAssertFalse(
@@ -557,6 +562,37 @@ final class RuntimeTests: XCTestCase {
                 $0.name == "wine" && $0.arguments.contains("reg") && $0.arguments.contains("gl")
             })
         )
+    }
+
+    func testPlayDirectLaunchUsesExactDisplayDesktopSize() throws {
+        let recipe = Recipe(
+            id: "mdk",
+            title: "MDK",
+            steamID: "38450",
+            installFolder: "MDK",
+            executable: "MDK3DFX.EXE",
+            directLaunch: true,
+            wineVirtualDesktop: "display"
+        )
+        let env = try makeEnvironment(recipe: recipe, displayWidth: 1920, displayHeight: 1242)
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        try writeSignedIn(env)
+        let gameDir = env.runtime.steamLibrary.appendingPathComponent("steamapps/common/MDK")
+        try FileManager.default.createDirectory(at: gameDir, withIntermediateDirectories: true)
+        try Data("exe".utf8).write(to: gameDir.appendingPathComponent("MDK3DFX.EXE"))
+        try """
+        "AppState" { "appid" "38450" "installdir" "MDK" "StateFlags" "4" }
+        """.write(
+            to: env.runtime.steamLibrary.appendingPathComponent("steamapps/appmanifest_38450.acf"),
+            atomically: true,
+            encoding: .utf8
+        )
+        env.steamClient.running = true
+        env.commands.started.removeAll()
+        try env.runtime.playGame()
+        let arguments = try XCTUnwrap(env.commands.started.last?.1)
+        XCTAssertTrue(arguments.contains("/desktop=mdk,1920x1242"))
     }
 
     func testSteamClientProcessIgnoresServiceAndHelper() {
@@ -1044,7 +1080,9 @@ final class RuntimeTests: XCTestCase {
             steamID: "480",
             installFolder: "Spacewar",
             executable: "Spacewar.exe"
-        )
+        ),
+        displayWidth: Int = 2560,
+        displayHeight: Int = 1440
     ) throws -> Environment {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cellar-run-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1067,7 +1105,7 @@ final class RuntimeTests: XCTestCase {
             sink: sink,
             frontmost: frontmost,
             steamClient: steamClient,
-            display: FixedDisplay(width: 2560, height: 1440)
+            display: FixedDisplay(width: displayWidth, height: displayHeight)
         )
         runtime.expectedSteamSetupSHA256 = SteamInstaller.digest(of: commands.steamSetupBytes)
         runtime.steamClientWait = 0

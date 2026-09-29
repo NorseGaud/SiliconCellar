@@ -125,9 +125,11 @@ start_app() {
         echo "Could not write $DEV_APP."
         return 0
     fi
+    # Reload keeps Engine in the bundle (see write_app_bundle). Only copy / replace
+    # Engine on first start, or if it is still missing after the rewrite.
     if [ "$mode" = "first" ] || [ ! -x "$DEV_APP/Contents/Resources/Engine/bin/wine" ]; then
         if [ "$mode" != "first" ]; then
-            # Engine missing mid-session — must stop Wine to replace it safely.
+            echo "Engine missing after reload — stopping Wine so it can be replaced."
             stop_wine
         fi
         if ! copy_engine; then
