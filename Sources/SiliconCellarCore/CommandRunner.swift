@@ -114,6 +114,21 @@ public struct ProcessCommandRunner: CommandRunning {
         try handle.close()
     }
 
+    /// Children of the command can keep the pipe open after it exits (`wineboot --update` starts Steam from the
+    /// autostart key), so a blocking read could wait for them. Read only what is in the pipe now.
+    private static func readAvailableWithoutWaiting(_ handle: FileHandle) -> Data {
+        let descriptor = handle.fileDescriptor
+        _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
+        var available = Data()
+        var buffer = [UInt8](repeating: 0, count: 65_536)
+        while true {
+            let byteCount = read(descriptor, &buffer, buffer.count)
+            if byteCount <= 0 { break }
+            available.append(buffer, count: byteCount)
+        }
+        return available
+    }
+
     /// Drain via readabilityHandler only. Do not call `readDataToEndOfFile` after a handler —
     /// that combination can hang and leave PIPE fds open.
     private func runCollecting(
@@ -135,13 +150,7 @@ public struct ProcessCommandRunner: CommandRunning {
         let handle = pipe.fileHandleForReading
         let lock = NSLock()
         var collected = Data()
-
-        handle.readabilityHandler = { file in
-            let data = file.availableData
-            if data.isEmpty {
-                file.readabilityHandler = nil
-                return
-            }
+        let record: (Data) -> Void = { data in
             lock.lock()
             collected.append(data)
             lock.unlock()
@@ -152,6 +161,15 @@ public struct ProcessCommandRunner: CommandRunning {
                     if !piece.isEmpty { onChunk(piece) }
                 }
             }
+        }
+
+        handle.readabilityHandler = { file in
+            let data = file.availableData
+            if data.isEmpty {
+                file.readabilityHandler = nil
+                return
+            }
+            record(data)
         }
 
         try process.run()
@@ -167,20 +185,8 @@ public struct ProcessCommandRunner: CommandRunning {
         handle.readabilityHandler = nil
         process.waitUntilExit()
 
-        // Writer is closed after waitUntilExit; availableData returns leftovers or empty.
-        let leftover = handle.availableData
-        if !leftover.isEmpty {
-            lock.lock()
-            collected.append(leftover)
-            lock.unlock()
-            if let onChunk {
-                let text = String(decoding: leftover, as: UTF8.self)
-                for line in text.split(whereSeparator: \.isNewline) {
-                    let piece = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !piece.isEmpty { onChunk(piece) }
-                }
-            }
-        }
+        let leftover = Self.readAvailableWithoutWaiting(handle)
+        if !leftover.isEmpty { record(leftover) }
         try? handle.close()
 
         if timedOut {

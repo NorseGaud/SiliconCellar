@@ -7,5 +7,8 @@
   "wineWindowsVersion": "win10",
   "steamArguments": ["-cef-disable-gpu"],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "macDriverOptions": {
+    "FullscreenBelowNotch": "y"
+  }
 }

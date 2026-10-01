@@ -31,7 +31,7 @@ cp Recipes/*.json "$APP/Contents/Resources/Recipes/"
 ENGINE_SRC="$ROOT/.build/engine"
 ENGINE_DST="$APP/Contents/Resources/Engine"
 if [ -n "${CI:-}" ]; then
-    echo "CI: skipping Wine Staging Engine copy"
+    echo "CI: skipping Wine Engine copy"
 elif [ "${SKIP_ENGINE_BUILD:-}" = "1" ]; then
     if [ -x "$ENGINE_SRC/bin/wine" ]; then
         rm -rf "$ENGINE_DST"
@@ -51,5 +51,23 @@ fi
 if [ -z "${CI:-}" ] && [ "${SKIP_ENGINE_BUILD:-}" != "1" ]; then
     test -x "$ENGINE_DST/bin/wine"
 fi
+
+# LGPL: ship the Wine licence and say where the exact Engine source is.
+write_engine_licenses() {
+    licenses="$APP/Contents/Resources/Licenses"
+    mkdir -p "$licenses"
+    if [ -f "$ENGINE_DST/share/doc/wine/COPYING.LIB" ]; then
+        cp "$ENGINE_DST/share/doc/wine/COPYING.LIB" "$licenses/Wine-LGPL.txt"
+    fi
+    python3 - "$ROOT/engine/manifest.json" >"$licenses/Wine-SOURCE.txt" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(f"Silicon Cellar Wine Engine {m['version']} (LGPL-2.1-or-later)")
+print(f"Source: {m['source_repository']}/tree/{m['version']}")
+print(f"Build: {m['url']}")
+print("Licences of the bundled libraries: Contents/Resources/Engine/share/doc")
+PY
+}
+write_engine_licenses
 
 echo "Built $APP ($short_version build $bundle_version)"

@@ -150,8 +150,8 @@ while true; do
     sleep 1
     now="$(source_stamp)"
     if [ "$now" != "$stamp" ]; then
-        echo "Files changed. Waiting 5s for edits to settle…"
-        sleep 5
+        echo "Files changed. Waiting 10s for edits to settle…"
+        sleep 10
         stamp="$(wait_until_stable)"
         start_app reload
     fi

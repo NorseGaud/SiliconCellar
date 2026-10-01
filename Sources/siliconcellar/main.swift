@@ -22,6 +22,8 @@ func printUsage() {
           uninstall         Start uninstall in Steam
           play              Launch the game through Steam
           stop              Stop Steam
+          accept-apple-license
+                            Accept Apple's licence for D3DMetal games
         """)
 }
 
@@ -61,6 +63,9 @@ do {
     }
     try library.perform(action, gameID: gameID)
 } catch let error as PortError {
+    fputs("ERROR: \(error.message)\n", stderr)
+    exit(1)
+} catch let error as AppleLicenseRequired {
     fputs("ERROR: \(error.message)\n", stderr)
     exit(1)
 } catch {

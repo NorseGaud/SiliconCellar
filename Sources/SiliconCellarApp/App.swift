@@ -76,6 +76,7 @@ final class LibraryModel: ObservableObject {
     /// Consecutive Steam-up polls before UI shows "Steam is running" (avoids orphan flicker).
     private var steamUpConfirmations = 0
     private let steamUpConfirmNeeded = 3
+    private var gameWasRunning = false
 
     var selected: Recipe? { recipes.first { $0.id == selectedID } }
     /// Stable Steam-up for buttons/labels — ignores brief false-positive polls.
@@ -89,6 +90,7 @@ final class LibraryModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         library?.stopAllSessions()
+        SystemChrome.showMenuBarAndDock()
     }
 
     /// Always close Steam. Does not stop only the game.
@@ -98,13 +100,14 @@ final class LibraryModel: ObservableObject {
         busy = false
         activity = ""
         backgroundReady = true
+        SystemChrome.showMenuBarAndDock()
         refreshInstalled()
         refresh()
     }
 
     /// Actions that show Steam UI after the user clicks (install, sign-in, play, …).
     private static let steamFrontActions: Set<LibraryAction> = [
-        .setup, .steam, .install, .uninstall, .logout, .play
+        .setup, .steam, .install, .uninstall, .logout, .play,
     ]
 
     func start() {
@@ -121,13 +124,6 @@ final class LibraryModel: ObservableObject {
             refresh()
             refreshInstalled()
             backgroundReady = hostMessage == nil
-            DispatchQueue.global(qos: .utility).async {
-                try? GPTKCleanup().removeLeftovers { _ in }
-                DispatchQueue.main.async {
-                    self.refreshHost()
-                    self.refresh()
-                }
-            }
             if hostMessage?.localizedCaseInsensitiveContains("game runtime was not found") == true {
                 findWineAgain()
             } else if let hostMessage {
@@ -178,42 +174,27 @@ final class LibraryModel: ObservableObject {
         appendStatus("Checking runtime…")
         popup = nil
         backgroundReady = false
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try GPTKCleanup().removeLeftovers { line in
-                    DispatchQueue.main.async {
-                        self.homebrewStatus = line
-                        self.activity = line
-                        self.appendStatus(line)
-                    }
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.error = (error as? PortError)?.message ?? error.localizedDescription
-                }
+        DispatchQueue.main.async {
+            self.refreshHost()
+            if self.hostMessage == nil {
+                self.error = nil
+                self.homebrewStatus = ""
+                self.statusLines = []
+                self.popup = nil
+                self.backgroundReady = true
+            } else {
+                self.backgroundReady = false
+                self.presentPopup(
+                    [self.error, self.hostMessage, EngineLocator.missingMessage]
+                        .compactMap { $0 }
+                        .joined(separator: "\n\n"),
+                    retry: true
+                )
             }
-            DispatchQueue.main.async {
-                self.refreshHost()
-                if self.hostMessage == nil {
-                    self.error = nil
-                    self.homebrewStatus = ""
-                    self.statusLines = []
-                    self.popup = nil
-                    self.backgroundReady = true
-                } else {
-                    self.backgroundReady = false
-                    self.presentPopup(
-                        [self.error, self.hostMessage, EngineLocator.missingMessage]
-                            .compactMap { $0 }
-                            .joined(separator: "\n\n"),
-                        retry: true
-                    )
-                }
-                self.busy = false
-                self.homebrewBusy = false
-                self.activity = ""
-                self.refresh()
-            }
+            self.busy = false
+            self.homebrewBusy = false
+            self.activity = ""
+            self.refresh()
         }
     }
 
@@ -305,6 +286,10 @@ final class LibraryModel: ObservableObject {
                         self.steamUpConfirmNeeded
                     )
                 }
+                if self.gameWasRunning, !session.0.isRunning {
+                    SystemChrome.showMenuBarAndDock()
+                }
+                self.gameWasRunning = session.0.isRunning
                 if self.installInProgress || self.uninstallInProgress { return }
                 self.applyLaunchProgress(session.1)
             }
@@ -395,6 +380,18 @@ final class LibraryModel: ObservableObject {
                         }
                     }
                 }
+            } catch let licenseRequired as AppleLicenseRequired {
+                DispatchQueue.main.async {
+                    self.busy = false
+                    self.activity = ""
+                    self.backgroundReady = true
+                    self.popup = AppPopup(
+                        title: "Apple D3DMetal licence",
+                        message: licenseRequired.message,
+                        retry: false,
+                        appleLicenseFile: licenseRequired.licenseFile
+                    )
+                }
             } catch {
                 DispatchQueue.main.async {
                     self.busy = false
@@ -436,6 +433,18 @@ final class LibraryModel: ObservableObject {
     func dismissPopup() {
         popup = nil
     }
+
+    func acceptAppleLicenseAndPlay() {
+        popup = nil
+        guard let library, let gameID = selected?.id else { return }
+        do {
+            try library.perform(.acceptAppleLicense, gameID: gameID)
+        } catch {
+            presentPopup((error as? PortError)?.message ?? error.localizedDescription, retry: false)
+            return
+        }
+        run(.play)
+    }
 }
 
 struct AppPopup: Identifiable, Equatable {
@@ -443,6 +452,7 @@ struct AppPopup: Identifiable, Equatable {
     let title: String
     let message: String
     let retry: Bool
+    var appleLicenseFile: URL?
 }
 
 struct LibraryView: View {
@@ -520,15 +530,23 @@ struct LibraryView: View {
             }
         }
         .sheet(item: $model.popup) { popup in
-            ErrorPopup(
-                popup: popup,
-                busy: model.busy,
-                retry: {
-                    model.dismissPopup()
-                    model.findWineAgain()
-                },
-                dismiss: { model.dismissPopup() }
-            )
+            if let licenseFile = popup.appleLicenseFile {
+                AppleLicensePopup(
+                    licenseFile: licenseFile,
+                    accept: { model.acceptAppleLicenseAndPlay() },
+                    decline: { model.dismissPopup() }
+                )
+            } else {
+                ErrorPopup(
+                    popup: popup,
+                    busy: model.busy,
+                    retry: {
+                        model.dismissPopup()
+                        model.findWineAgain()
+                    },
+                    dismiss: { model.dismissPopup() }
+                )
+            }
         }
         .onAppear {
             model.start()
@@ -991,5 +1009,51 @@ struct ErrorPopup: View {
         }
         .padding(24)
         .frame(minWidth: 520, idealWidth: 640, minHeight: 240, idealHeight: 320)
+    }
+}
+
+struct AppleLicensePopup: View {
+    let licenseFile: URL
+    let accept: () -> Void
+    let decline: () -> Void
+
+    private static let summary = """
+        This game uses D3DMetal from Apple's Game Porting Toolkit. Read and accept Apple's licence to play. \
+        You can use D3DMetal only to develop, test, or evaluate games, and only for non-commercial purposes.
+        """
+
+    private var licenseText: String {
+        guard
+            let data = try? Data(contentsOf: licenseFile),
+            let text = try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            )
+        else { return "Could not read \(licenseFile.path)." }
+        return text.string
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Apple D3DMetal licence")
+                .font(.title2.bold())
+            Text(Self.summary)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                Text(licenseText)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .border(.separator)
+            HStack {
+                Spacer()
+                Button("Decline") { decline() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Accept and Play") { accept() }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 620, idealWidth: 720, minHeight: 480, idealHeight: 620)
     }
 }

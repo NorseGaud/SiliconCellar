@@ -16,8 +16,13 @@ public final class Runtime: @unchecked Sendable {
     public var installTimeout: TimeInterval = 7200
     public var uninstallTimeout: TimeInterval = 1800
     public var installPollInterval: TimeInterval = 0.2
+    /// After wineserver vanishes mid-install, keep checking files this long (Steam often restarts).
+    public var sessionDropGrace: TimeInterval = 30
     public var steamClientWait: TimeInterval = 90
     public var steamWebHelperWrapper: Data = SteamWebHelper.wrapperBytes
+    public var rendererPackages: [RendererPackage] = RendererPackage.all
+    /// The Engine that runs this prefix. A new ID makes `prepare()` update the prefix.
+    public var engineID: String
 
     public init(
         recipe: Recipe,
@@ -41,12 +46,24 @@ public final class Runtime: @unchecked Sendable {
         self.frontmost = frontmost
         self.steamClient = steamClient
         self.display = display
+        self.engineID = EngineLocator.engineID(wine: wine, files: files)
     }
 
     public var prefix: URL { root.appendingPathComponent("prefix") }
+    private var systemRegistry: URL { prefix.appendingPathComponent("system.reg") }
+    private var readyMarkerText: String { "runtime-v2 \(engineID)\n" }
+
+    /// True when the current Engine prepared the prefix.
+    public var isRuntimeCurrent: Bool {
+        guard let data = try? files.read(readyMarker) else { return false }
+        return String(decoding: data, as: UTF8.self) == readyMarkerText
+    }
     public var downloads: URL { root.appendingPathComponent("downloads") }
     public var logs: URL { root.appendingPathComponent("logs") }
     public var readyMarker: URL { root.appendingPathComponent("runtime-ready") }
+    public var renderersRoot: URL { root.appendingPathComponent("renderers") }
+    public var appleLicenseMarker: URL { root.appendingPathComponent("apple-gptk-license-accepted") }
+    private var rendererPackage: RendererPackage? { rendererPackages.first { $0.id == recipe.rendererID } }
     public var loginUsers: URL {
         steamLibrary.appendingPathComponent("config/loginusers.vdf")
     }
@@ -194,6 +211,8 @@ public final class Runtime: @unchecked Sendable {
         environment["WINEDEBUG"] = "-all"
         environment["WINEMSYNC"] = "1"
         environment["WINEESYNC"] = "0"
+        // CrossOver Wine reports the user name "crossover" without this. Steam keys the saved sign-in to the user name.
+        environment["CX_REPORT_REAL_USERNAME"] = "1"
         if advertiseAVX { environment["ROSETTA_ADVERTISE_AVX"] = "1" }
         environment["MTL_HUD_ENABLED"] = hud ? "1" : "0"
         environment["WINEDLLOVERRIDES"] =
@@ -234,7 +253,8 @@ public final class Runtime: @unchecked Sendable {
         try files.createDirectory(downloads)
         try files.createDirectory(logs)
         sink.say("Preparing a Windows environment in \(prefix.path)…")
-        if !files.fileExists(prefix.appendingPathComponent("system.reg")) {
+        let prefixExisted = files.fileExists(systemRegistry)
+        if !prefixExisted {
             try commands.run(
                 executable: wine,
                 arguments: ["wineboot", "--init"],
@@ -244,11 +264,25 @@ public final class Runtime: @unchecked Sendable {
             )
         }
         let deadline = Date().addingTimeInterval(90)
-        while !files.fileExists(prefix.appendingPathComponent("system.reg")), Date() < deadline {
+        while !files.fileExists(systemRegistry), Date() < deadline {
             Thread.sleep(forTimeInterval: 0.2)
         }
-        guard files.fileExists(prefix.appendingPathComponent("system.reg")) else {
+        guard files.fileExists(systemRegistry) else {
             throw PortError("The Windows environment did not finish creating.")
+        }
+        if prefixExisted && !isRuntimeCurrent {
+            // Steam and the games stay; wineboot only refreshes the Wine files of the prefix.
+            sink.say("Updating the Windows environment for Engine \(engineID)…")
+            try moveUserProfileToEngineUserName()
+            try commands.run(
+                executable: wine,
+                arguments: ["wineboot", "--update"],
+                environment: wineEnvironment(),
+                timeout: 600,
+                workingDirectory: nil
+            )
+            // wineboot --update runs the autostart keys, which start "steam.exe -silent" without the Steam arguments.
+            endWineSession()
         }
         try commands.run(
             executable: wine,
@@ -258,7 +292,7 @@ public final class Runtime: @unchecked Sendable {
             workingDirectory: nil
         )
         try isolateUserLinks()
-        try files.write(Data("runtime-v1\n".utf8), to: readyMarker)
+        try files.write(Data(readyMarkerText.utf8), to: readyMarker)
         sink.say("The independent runtime is ready.")
     }
 
@@ -290,6 +324,7 @@ public final class Runtime: @unchecked Sendable {
         try waitForInstall()
         try promoteLibraryManifest()
         try quarantineGameFiles()
+        try seedGameFiles()
         sink.say("Steam finished installing \(recipe.title).")
     }
 
@@ -309,10 +344,67 @@ public final class Runtime: @unchecked Sendable {
     public func playGame() throws {
         try validateGameInstallation()
         try ensureSteamClient()
+        let rendererFolder = try prepareRenderer()
         try promoteLibraryManifest()
         try quarantineGameFiles()
-        try applyWineAppDefaults()
+        try seedGameFiles()
+        try applyWineAppDefaults(rendererFolder: rendererFolder)
         try openSteam(play: true)
+    }
+
+    /// Installs the recipe's renderer package once and checks its licence. Returns nil for Wine's own renderer.
+    public func prepareRenderer() throws -> URL? {
+        guard let package = rendererPackage else { return nil }
+        let rendererFolder = renderersRoot.appendingPathComponent(package.id, isDirectory: true)
+        let packageMarker = rendererFolder.appendingPathComponent(".siliconcellar-package")
+        let installedSHA256 = (try? files.read(packageMarker)).map { String(decoding: $0, as: UTF8.self) }
+        if installedSHA256 != package.sha256 {
+            try installRendererPackage(package, into: rendererFolder, marker: packageMarker)
+        }
+        try requireAppleLicense(for: package, in: rendererFolder)
+        return rendererFolder
+    }
+
+    public func acceptAppleLicense() throws {
+        try files.createDirectory(root)
+        try files.write(Data(RendererPackage.appleGamePortingToolkitLicenseID.utf8), to: appleLicenseMarker)
+        sink.say("Apple's Game Porting Toolkit licence is accepted. Games can use D3DMetal.")
+    }
+
+    private func installRendererPackage(_ package: RendererPackage, into rendererFolder: URL, marker: URL) throws {
+        let archive = try downloadPinnedFile(
+            name: package.archiveName,
+            url: package.url,
+            expected: package.sha256,
+            progress: "Downloading the \(package.id) renderer (\(package.version))…",
+            mismatch: "The downloaded \(package.id) renderer does not match the pinned SHA-256. Play stopped."
+        )
+        let partialFolder = renderersRoot.appendingPathComponent(".\(package.id).partial")
+        if files.fileExists(partialFolder) { try files.removeItem(partialFolder) }
+        try files.createDirectory(partialFolder)
+        try commands.run(
+            executable: URL(fileURLWithPath: "/usr/bin/tar"),
+            arguments: ["-xJf", archive.path, "-C", partialFolder.path],
+            environment: ProcessInfo.processInfo.environment,
+            timeout: 300,
+            workingDirectory: nil
+        )
+        try files.write(Data(package.sha256.utf8), to: partialFolder.appendingPathComponent(marker.lastPathComponent))
+        if files.fileExists(rendererFolder) { try files.removeItem(rendererFolder) }
+        try files.moveItem(from: partialFolder, to: rendererFolder)
+    }
+
+    private func requireAppleLicense(for package: RendererPackage, in rendererFolder: URL) throws {
+        guard let licenseID = package.appleLicenseID else { return }
+        let acceptedLicenseID = (try? files.read(appleLicenseMarker)).map {
+            String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard acceptedLicenseID != licenseID else { return }
+        throw AppleLicenseRequired(
+            licenseFile: rendererFolder.appendingPathComponent("License.rtf"),
+            licenseID: licenseID,
+            gameTitle: recipe.title
+        )
     }
 
     public func ensureSteamClient() throws {
@@ -372,6 +464,7 @@ public final class Runtime: @unchecked Sendable {
         guard files.fileExists(readyMarker), steam != nil else {
             throw PortError("Install Steam before you open the library.")
         }
+        if !isRuntimeCurrent && !isSessionLive { try prepare() }
         if play { try validateGameInstallation() }
         try files.createDirectory(logs)
         let log = logs.appendingPathComponent("steam-session.log")
@@ -478,10 +571,15 @@ public final class Runtime: @unchecked Sendable {
             guard let size = display.mainDisplaySize() else {
                 throw PortError("Could not read the display size for \(recipe.title).")
             }
-            // Match the Mac screen. Odd laptop sizes still work for Wine macdrv fullscreen;
-            // forcing a smaller "standard" mode (for example 1920x1200 on 1920x1242) can
-            // leave the game running with no visible window.
+            // Match the Mac screen. Some titles (MDK) only draw when the desktop matches it.
             return "\(size.width)x\(size.height)"
+        }
+        if recipe.fitsStandardDesktop {
+            guard let size = display.mainDisplaySize() else {
+                throw PortError("Could not read the display size for \(recipe.title).")
+            }
+            let fitted = WineVirtualDesktop.sizeFitting(width: size.width, height: size.height)
+            return "\(fitted.width)x\(fitted.height)"
         }
         guard let desktop = recipe.virtualDesktopSize else {
             throw PortError("Recipe \(recipe.id) is missing wineVirtualDesktop.")
@@ -508,18 +606,95 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Per-exe Wine Direct3D settings under `AppDefaults\<executable>\Direct3D`.
-    public func applyWineAppDefaults() throws {
-        guard let renderer = recipe.d3dRenderer else { return }
-        let key = "HKCU\\Software\\Wine\\AppDefaults\\\(recipe.executable)\\Direct3D"
-        _ = try commands.run(
+    /// Write recipe seed files under the install folder (Wine launch config fixes).
+    public func seedGameFiles() throws {
+        let entries = recipe.filesToSeed
+        guard !entries.isEmpty else { return }
+        let folder =
+            steamLibrary
+            .appendingPathComponent("steamapps/common")
+            .appendingPathComponent(recipe.installFolder)
+        guard files.fileExists(folder) else { return }
+        for (relative, text) in entries.sorted(by: { $0.key < $1.key }) {
+            let target = folder.appendingPathComponent(relative)
+            try files.createDirectory(target.deletingLastPathComponent())
+            try files.write(Data(expandedSeedText(text).utf8), to: target)
+            sink.say("Set \(relative) so \(recipe.title) can run under Wine.")
+        }
+    }
+
+    private func expandedSeedText(_ text: String) -> String {
+        guard text.contains("{displayWidth}") || text.contains("{displayHeight}") else { return text }
+        let size = seedDisplaySize()
+        return
+            text
+            .replacingOccurrences(of: "{displayWidth}", with: "\(size.width)")
+            .replacingOccurrences(of: "{displayHeight}", with: "\(size.height)")
+    }
+
+    /// Seed placeholders follow the Wine desktop the game will actually get.
+    private func seedDisplaySize() -> (width: Int, height: Int) {
+        if let desktop = try? resolvedVirtualDesktop() {
+            let parts = desktop.split(separator: "x")
+            if parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]) {
+                return (width, height)
+            }
+        }
+        return display.mainDisplaySize() ?? (width: 1920, height: 1080)
+    }
+
+    /// Per-exe Wine settings under `AppDefaults\<executable>\{Direct3D,Mac Driver,SiliconCellar}`.
+    /// `wine reg` writes through a running wineserver, so a game that Steam starts later sees the values.
+    public func applyWineAppDefaults(rendererFolder: URL? = nil) throws {
+        if let renderer = recipe.d3dRenderer {
+            try setAppDefault(section: "Direct3D", name: "renderer", value: renderer)
+            sink.say("Wine Direct3D renderer for \(recipe.executable) is \(renderer).")
+        }
+        for (name, value) in recipe.wineMacDriverOptions.sorted(by: { $0.key < $1.key }) {
+            try setAppDefault(section: "Mac Driver", name: name, value: value)
+        }
+        try applyRenderer(folder: rendererFolder)
+    }
+
+    private static let rendererSection = "SiliconCellar"
+
+    /// The Engine reads `DllPath` and `D3DSharedPath` when the game process starts.
+    private func applyRenderer(folder rendererFolder: URL?) throws {
+        // The key does not exist on first play, so `reg delete` can fail.
+        _ = try? runWineRegistry(["delete", appDefaultsKey(section: Self.rendererSection), "/f"])
+        guard let rendererFolder, let package = rendererPackage else { return }
+        try setAppDefault(
+            section: Self.rendererSection,
+            name: "DllPath",
+            value: rendererFolder.appendingPathComponent("wine").path
+        )
+        if package.usesD3DMetal {
+            try setAppDefault(
+                section: Self.rendererSection,
+                name: "D3DSharedPath",
+                value: rendererFolder.appendingPathComponent("external/libd3dshared.dylib").path
+            )
+        }
+        sink.say("\(recipe.title) uses the \(package.id) renderer (\(package.version)).")
+    }
+
+    private func appDefaultsKey(section: String) -> String {
+        "HKCU\\Software\\Wine\\AppDefaults\\\(recipe.executable)\\\(section)"
+    }
+
+    private func setAppDefault(section: String, name: String, value: String) throws {
+        try runWineRegistry(["add", appDefaultsKey(section: section), "/v", name, "/t", "REG_SZ", "/d", value, "/f"])
+    }
+
+    @discardableResult
+    private func runWineRegistry(_ arguments: [String]) throws -> String {
+        try commands.run(
             executable: wine,
-            arguments: ["reg", "add", key, "/v", "renderer", "/t", "REG_SZ", "/d", renderer, "/f"],
+            arguments: ["reg"] + arguments,
             environment: wineEnvironment(advertiseAVX: false),
             timeout: 30,
             workingDirectory: nil
         )
-        sink.say("Wine Direct3D renderer for \(recipe.executable) is \(renderer).")
     }
 
     private func startSteamRequest(install: Bool, uninstall: Bool, hud: Bool, log: URL) throws {
@@ -582,7 +757,21 @@ public final class Runtime: @unchecked Sendable {
             try? repairMisplacedInstall()
             if (try? validateGameInstallation()) != nil { return }
             if !isSessionLive {
-                throw PortError("Steam closed before \(recipe.title) finished installing.")
+                // Steam often restarts when a download ends. Keep checking the library
+                // before treating a dead wineserver as a failed install.
+                if try waitThroughSessionDrop(
+                    until: deadline,
+                    done: {
+                        try? repairMisplacedInstall()
+                        return (try? validateGameInstallation()) != nil
+                    })
+                {
+                    return
+                }
+                if !isSessionLive {
+                    throw PortError("Steam closed before \(recipe.title) finished installing.")
+                }
+                continue
             }
             Thread.sleep(forTimeInterval: installPollInterval)
         }
@@ -592,19 +781,47 @@ public final class Runtime: @unchecked Sendable {
     private func waitForUninstall() throws {
         let deadline = Date().addingTimeInterval(uninstallTimeout)
         while Date() < deadline {
-            let exeGone = game.map { !files.fileExists($0) } ?? true
-            let manifestsGone = manifestCandidates.allSatisfy { !files.fileExists($0) }
-            if exeGone && manifestsGone { return }
+            if isUninstallComplete() { return }
             if !isSessionLive {
-                throw PortError("Steam closed before \(recipe.title) finished uninstalling.")
+                if try waitThroughSessionDrop(until: deadline, done: { isUninstallComplete() }) {
+                    return
+                }
+                if !isSessionLive {
+                    throw PortError("Steam closed before \(recipe.title) finished uninstalling.")
+                }
+                continue
             }
             Thread.sleep(forTimeInterval: installPollInterval)
         }
         throw PortError("Steam did not finish removing \(recipe.title).")
     }
 
+    private func isUninstallComplete() -> Bool {
+        let exeGone = game.map { !files.fileExists($0) } ?? true
+        let manifestsGone = manifestCandidates.allSatisfy { !files.fileExists($0) }
+        return exeGone && manifestsGone
+    }
+
+    /// Returns true when `done` succeeds while the session is down.
+    /// Returns false when the session comes back before `done` succeeds (caller should resume waiting).
+    private func waitThroughSessionDrop(until outerDeadline: Date, done: () -> Bool) throws -> Bool {
+        let graceDeadline = Date().addingTimeInterval(sessionDropGrace)
+        let deadline = min(graceDeadline, outerDeadline)
+        while Date() < deadline {
+            if done() { return true }
+            if isSessionLive { return false }
+            Thread.sleep(forTimeInterval: installPollInterval)
+        }
+        return done()
+    }
+
     public func stop() throws {
         guard files.fileExists(wineserver) else { return }
+        endWineSession()
+        sink.say("Stopped Steam.")
+    }
+
+    private func endWineSession() {
         _ = try? commands.run(
             executable: wineserver,
             arguments: ["-k"],
@@ -619,7 +836,6 @@ public final class Runtime: @unchecked Sendable {
             timeout: 30,
             workingDirectory: nil
         )
-        sink.say("Stopped Steam.")
     }
 
     public func stopGame() throws {
@@ -806,6 +1022,20 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
+    /// The CrossOver-based Engine always names the Windows user "crossover". Older Engines used the Mac user name,
+    /// so move that profile once and keep the old name as a link for paths that games and Steam saved.
+    private func moveUserProfileToEngineUserName() throws {
+        let users = prefix.appendingPathComponent("drive_c/users")
+        let engineProfile = users.appendingPathComponent("crossover")
+        guard !files.fileExists(engineProfile) else { return }
+        let oldProfiles = ((try? files.contentsOfDirectory(users)) ?? []).filter {
+            $0.lastPathComponent != "Public" && !files.isSymbolicLink($0)
+        }
+        guard oldProfiles.count == 1, let oldProfile = oldProfiles.first else { return }
+        try files.moveItem(from: oldProfile, to: engineProfile)
+        try files.createSymbolicLink(oldProfile, destination: engineProfile.lastPathComponent)
+    }
+
     private func isolateUserLinks() throws {
         let users = prefix.appendingPathComponent("drive_c/users")
         guard files.fileExists(users) else { return }
@@ -829,6 +1059,7 @@ public enum LibraryAction: String, Sendable {
     case stop
     case logout
     case uninstall
+    case acceptAppleLicense = "accept-apple-license"
 }
 
 public struct Library: @unchecked Sendable {
@@ -890,7 +1121,7 @@ public struct Library: @unchecked Sendable {
     }
 
     public func perform(_ action: LibraryAction, gameID: String) throws {
-        let blockOtherSessions = ![.check, .stop, .logout].contains(action)
+        let blockOtherSessions = ![.check, .stop, .logout, .acceptAppleLicense].contains(action)
         try performLocked(gameID: gameID, blockOtherSessions: blockOtherSessions) { selected in
             switch action {
             case .check: try selected.check()
@@ -901,6 +1132,7 @@ public struct Library: @unchecked Sendable {
             case .play: try selected.playGame()
             case .stop: try selected.stopGameOrSession()
             case .logout: try selected.logout()
+            case .acceptAppleLicense: try selected.acceptAppleLicense()
             }
         }
     }

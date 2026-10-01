@@ -1,7 +1,8 @@
 {
-  "version": "11.18",
-  "provider": "gcenx",
-  "url": "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.18/wine-staging-11.18-osx64.tar.xz",
-  "sha256": "b63704b91af269bc026a87f12bd297c4a50caaf570c322e600b6621ef918f127",
-  "wine_subdir": "Wine Staging.app/Contents/Resources/wine"
+  "version": "sc-26.3.0-4",
+  "provider": "norsegaud",
+  "source_repository": "https://github.com/NorseGaud/wine",
+  "url": "https://github.com/NorseGaud/wine/releases/download/sc-26.3.0-4/siliconcellar-wine-sc-26.3.0-4-x86_64.tar.xz",
+  "sha256": "b4f0d835bf549abf77d4863e1f2cb17f46e424cfb487ac6bb53d0d3ed10fc2c9",
+  "wine_subdir": "."
 }

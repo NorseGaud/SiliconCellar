@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import CoreGraphics
 import Foundation
 
@@ -22,6 +23,26 @@ public struct MainScreenDisplay: DisplaySizing {
         let width = max(640, Int(screen.frame.width.rounded()))
         let height = max(480, Int(screen.frame.height.rounded()))
         return (width - (width % 2), height - (height % 2))
+    }
+}
+
+/// Standard `explorer /desktop` sizes. Skip modes that stay invisible on this Mac driver
+/// (1920x1200 on a 1920x1242 screen produced no window).
+public enum WineVirtualDesktop {
+    public static let standardModes: [(width: Int, height: Int)] = [
+        (3840, 2160), (2560, 1440), (1920, 1080),
+        (1680, 1050), (1600, 1200), (1600, 900), (1440, 900),
+        (1366, 768), (1280, 1024), (1280, 960), (1280, 800), (1280, 720),
+        (1024, 768), (800, 600), (640, 480),
+    ]
+
+    public static func sizeFitting(width: Int, height: Int) -> (width: Int, height: Int) {
+        let maxWidth = max(640, width)
+        let maxHeight = max(480, height)
+        if let mode = standardModes.first(where: { $0.width <= maxWidth && $0.height <= maxHeight }) {
+            return mode
+        }
+        return (640, 480)
     }
 }
 
@@ -121,6 +142,55 @@ public enum WineTerminal {
     }
 }
 
+/// Hide the Mac menu bar / Dock while a Wine game holds the screen.
+public enum SystemChrome {
+    private static let lock = NSLock()
+    private static var observer: NSObjectProtocol?
+    private static var wineExecutable: URL?
+
+    public static func hideMenuBarAndDock(whileWine wine: URL) {
+        lock.lock()
+        wineExecutable = wine
+        lock.unlock()
+        SetSystemUIMode(UInt32(kUIModeAllHidden), 0)
+        startLeavingWineMonitor()
+    }
+
+    public static func showMenuBarAndDock() {
+        SetSystemUIMode(UInt32(kUIModeNormal), 0)
+    }
+
+    private static func startLeavingWineMonitor() {
+        lock.lock()
+        let alreadyWatching = observer != nil
+        lock.unlock()
+        guard !alreadyWatching else { return }
+        let handle = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            let wine: URL?
+            lock.lock()
+            wine = wineExecutable
+            lock.unlock()
+            guard let wine else {
+                showMenuBarAndDock()
+                return
+            }
+            if SteamUIFocus.isWineFrontmost(for: wine) { return }
+            showMenuBarAndDock()
+        }
+        lock.lock()
+        if observer == nil {
+            observer = handle
+        } else {
+            NSWorkspace.shared.notificationCenter.removeObserver(handle)
+        }
+        lock.unlock()
+    }
+}
+
 public struct WorkspaceFrontmost: FrontmostActivating {
     public init() {}
 
@@ -155,11 +225,19 @@ public struct WorkspaceFrontmost: FrontmostActivating {
             return
         }
         let deadline = Date().addingTimeInterval(timeout)
+        var raised = false
         while Date() < deadline {
             // Do not raise the largest Wine window (often Steam) — that hides the game.
             _ = activateNow(executable: executable, raiseLargestWindow: false)
-            if SteamUIFocus.raiseWineWindow(titled: needle, wineExecutable: executable) { break }
+            if SteamUIFocus.raiseWineWindow(titled: needle, wineExecutable: executable) {
+                raised = true
+                break
+            }
             Thread.sleep(forTimeInterval: 0.25)
+        }
+        if raised {
+            // Borderless Wine desktops still leave the Mac menu bar; hide it and clip focus.
+            SystemChrome.hideMenuBarAndDock(whileWine: executable)
         }
         WineTerminal.closeStagingSessions()
     }
@@ -175,7 +253,7 @@ public struct WorkspaceFrontmost: FrontmostActivating {
             for app in NSWorkspace.shared.runningApplications {
                 let ref = WineHost.RunningApp(executable: app.executableURL, bundle: app.bundleURL)
                 guard wanted.contains(ref) else { continue }
-                NSApp.yieldActivation(to: app)
+                NSApp?.yieldActivation(to: app)
                 // activateAllWindows: Steam's UI is often a child Wine window, not the first one.
                 _ = app.activate(options: [.activateAllWindows])
                 didActivate = true
@@ -260,7 +338,7 @@ public enum SteamUIFocus {
         return windows.first { window in
             guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
                 let name = window[kCGWindowName as String] as? String,
-                name.lowercased().contains(needle),
+                windowTitle(name, matches: needle),
                 let bounds = window[kCGWindowBounds as String] as? [String: Any]
             else { return false }
             let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
@@ -269,13 +347,24 @@ public enum SteamUIFocus {
         }
     }
 
+    /// Match "MDK 2" to a Wine window titled "mdk2".
+    private static func windowTitle(_ name: String, matches needle: String) -> Bool {
+        let lowerName = name.lowercased()
+        let lowerNeedle = needle.lowercased()
+        if lowerName.contains(lowerNeedle) { return true }
+        let compactName = lowerName.filter { !$0.isWhitespace }
+        let compactNeedle = lowerNeedle.filter { !$0.isWhitespace }
+        return !compactNeedle.isEmpty && compactName.contains(compactNeedle)
+    }
+
     private static func largestVisibleWineWindow(for wineExecutable: URL) -> [String: Any]? {
         let wantedPIDs = wineProcessIDs(for: wineExecutable)
         guard !wantedPIDs.isEmpty else { return nil }
         let windows =
             CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        return windows
+        return
+            windows
             .compactMap { window -> (area: Double, window: [String: Any])? in
                 guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
                     (window[kCGWindowLayer as String] as? Int) == 0,
@@ -297,10 +386,10 @@ public enum SteamUIFocus {
             name.isEmpty
             ? ""
             : """
-                  try
-                    perform action "AXRaise" of window "\(escaped)" of targetProc
-                  end try
-              """
+                try
+                  perform action "AXRaise" of window "\(escaped)" of targetProc
+                end try
+            """
         let script = """
             tell application "System Events"
               set targetProc to first process whose unix id is \(pid)

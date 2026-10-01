@@ -1,4 +1,4 @@
-.PHONY: all build test app engine dev clean lint ci sign create-dmg notarize dist release
+.PHONY: all build test app engine engine-source dev clean lint ci sign create-dmg notarize dist release
 
 # Developer ID release signing (non-CI). Credentials stay in the login keychain.
 CODESIGN_IDENTITY?=Developer ID Application: ONLYHUMN LLC (4JD8RUCQ2W)
@@ -24,9 +24,13 @@ test:
 	swift test
 	./scripts/test-update-cask.sh
 
-# Refresh pinned Gcenx Wine Staging into .build/engine (download + unpack).
+# Refresh the pinned NorseGaud/wine Engine release into .build/engine (download + unpack).
 engine:
 	FORCE_ENGINE_BUILD=1 ./scripts/build-wine-engine.sh
+
+# Compile the same pinned Engine from source into .build/engine (hours; x86_64 Homebrew needed).
+engine-source:
+	./scripts/build-engine-source.sh
 
 app:
 	VERSION="$(version)" BUILD_NUMBER="$(build_number)" ./scripts/package-app.sh
@@ -40,6 +44,7 @@ lint:
 	sh -n scripts/app-bundle.sh
 	sh -n scripts/package-app.sh
 	sh -n scripts/build-wine-engine.sh
+	sh -n scripts/build-engine-source.sh
 	sh -n scripts/sign-app.sh
 	sh -n scripts/make-dmg.sh
 	sh -n scripts/dev.sh

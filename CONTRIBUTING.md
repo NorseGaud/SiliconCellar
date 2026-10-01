@@ -10,7 +10,7 @@ This guide is for local development on Silicon Cellar. For signed release DMGs, 
 - `git`, `python3`, `curl`, `tar`, and `make`
 - Network access to GitHub when you fetch the Engine
 
-You do **not** need Apple Game Porting Toolkit or a local Wine compile. The app uses a pinned [Gcenx Wine Staging](https://github.com/Gcenx/macOS_Wine_builds/releases) package.
+You do **not** need Apple Game Porting Toolkit or a local Wine compile. The app uses a pinned [NorseGaud/wine](https://github.com/NorseGaud/wine/releases) Engine release (Wine 11.0 from the CrossOver 26.3 source with Silicon Cellar fixes).
 
 ## Clone and enter the repo
 
@@ -21,7 +21,7 @@ cd SiliconCellar
 
 ## Fast loop (code and tests)
 
-Use this for most day-to-day work. It does not compile Wine Staging and does not make a DMG.
+Use this for most day-to-day work. It does not fetch or compile Wine and does not make a DMG.
 
 ```sh
 make lint
@@ -58,16 +58,18 @@ This builds SiliconCellar, wraps it in `.build/dev/SiliconCellar.app`, opens the
 
 If `.build/engine/bin/wine` exists, `make dev` copies that Engine into the dev app. Without it, the UI may report that the game runtime is missing until you fetch the Engine (below).
 
-## Wine Staging Engine (first playable package)
+## Wine Engine (first playable package)
 
-The release app ships Wine at `Contents/Resources/Engine/`. Fetch the pinned Gcenx package once:
+The release app ships Wine at `Contents/Resources/Engine/`. Fetch the pinned release once:
 
 ```sh
 ./scripts/build-wine-engine.sh
 # or: make engine
 ```
 
-Pin: `engine/manifest.json` (URL + SHA-256 for `wine-staging-*-osx64.tar.xz`). Output: `.build/engine/` (not committed). The binary is x86_64 and needs Rosetta.
+Pin: `engine/manifest.json` (tag, URL and SHA-256 for `siliconcellar-wine-*-x86_64.tar.xz`). Output: `.build/engine/` (not committed). The binary is x86_64 and needs Rosetta.
+
+To compile the same tag yourself, run `make engine-source`. It clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs `build/build-engine.sh` from that repo. That takes hours and needs x86_64 Homebrew in `/usr/local` (see `build/README.md` in the Wine repo). To change the Wine fixes, work in the Wine repo, push a new `sc-*` tag, and pin the new release in `engine/manifest.json`.
 
 Then package an unsigned app for local play:
 
@@ -80,7 +82,7 @@ open dist/SiliconCellar.app
 
 ## Full local release (optional)
 
-Bare `make` runs lint, test, debug build, a **fresh** Wine Staging Engine (`make engine`), then sign / DMG / notarize. That needs Developer ID and notary credentials. See [RELEASING.md](RELEASING.md).
+Bare `make` runs lint, test, debug build, a **fresh** Wine Engine (`make engine`), then sign / DMG / notarize. That needs Developer ID and notary credentials. See [RELEASING.md](RELEASING.md).
 
 | Command | Engine |
 |---------|--------|
@@ -99,7 +101,7 @@ For unsigned packaging only, use `make app` or `make ci`.
 | `Sources/siliconcellar/` | CLI |
 | `Tests/SiliconCellarCoreTests/` | Unit tests |
 | `Recipes/` | Bundled game recipes (JSON) |
-| `engine/manifest.json` | Pinned Gcenx Wine Staging package |
+| `engine/manifest.json` | Pinned NorseGaud/wine Engine release |
 | `scripts/` | Package, Engine fetch, DMG, `dev.sh` |
 
 ## Recipes

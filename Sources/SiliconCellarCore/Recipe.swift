@@ -13,12 +13,18 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var dllOverrides: String?
     /// Install-folder files to move aside before play (for example Steam DDrawCompat).
     public var quarantineFiles: [String]?
+    /// Relative paths under the install folder written before play (Wine launch fixes).
+    public var seedFiles: [String: String]?
     /// When true, start Steam, then run `executable` through Wine instead of `-applaunch`.
     public var directLaunch: Bool?
     /// Wine `Direct3D` renderer for this executable (`gl`, `vulkan`, `gdi`, or `no3d`).
     public var wineD3DRenderer: String?
     /// Wine virtual desktop for direct launch: `WIDTHxHEIGHT`, or `display` to match the Mac screen.
     public var wineVirtualDesktop: String?
+    /// Wine Mac driver values for this executable (for example `FullscreenBelowNotch: y`).
+    public var macDriverOptions: [String: String]?
+    /// Direct3D layer for this executable: `wine` (default) or a `RendererPackage` ID.
+    public var renderer: String?
 
     public init(
         id: String,
@@ -36,6 +42,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         environment: [String: String]? = [:],
         dllOverrides: String? = "dxgi,d3d11,d3d12=n,b",
         quarantineFiles: [String]? = nil,
+        seedFiles: [String: String]? = nil,
         directLaunch: Bool? = nil,
         wineD3DRenderer: String? = nil,
         wineVirtualDesktop: String? = nil
@@ -51,6 +58,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         self.environment = environment
         self.dllOverrides = dllOverrides
         self.quarantineFiles = quarantineFiles
+        self.seedFiles = seedFiles
         self.directLaunch = directLaunch
         self.wineD3DRenderer = wineD3DRenderer
         self.wineVirtualDesktop = wineVirtualDesktop
@@ -62,6 +70,12 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var graphicsOverrides: String { dllOverrides ?? "dxgi,d3d11,d3d12=n,b" }
     public var launchesDirectly: Bool { directLaunch == true }
     public var filesToQuarantine: [String] { quarantineFiles ?? [] }
+    public var filesToSeed: [String: String] { seedFiles ?? [:] }
+    public var wineMacDriverOptions: [String: String] { macDriverOptions ?? [:] }
+    public var rendererID: String {
+        guard let renderer, !renderer.isEmpty else { return RendererPackage.wineID }
+        return renderer
+    }
     public var d3dRenderer: String? {
         guard let wineD3DRenderer, !wineD3DRenderer.isEmpty else { return nil }
         return wineD3DRenderer
@@ -74,7 +88,14 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         wineVirtualDesktop?.caseInsensitiveCompare(Self.displayDesktopToken) == .orderedSame
     }
 
+    /// Largest standard Wine desktop that fits the Mac screen.
+    /// Odd sizes (for example 1920x1242) make some games exit with no window.
+    public var fitsStandardDesktop: Bool {
+        wineVirtualDesktop?.caseInsensitiveCompare(Self.fitDesktopToken) == .orderedSame
+    }
+
     public static let displayDesktopToken = "display"
+    public static let fitDesktopToken = "fit"
     public static let quarantineSuffix = ".siliconcellar-disabled"
 
     public static let onboardingID = "onboarding"
@@ -110,6 +131,9 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         for name in filesToQuarantine {
             try Self.validateName(name, field: "quarantineFiles", id: id)
         }
+        for path in filesToSeed.keys {
+            try Self.validateRelativePath(path, id: id)
+        }
         if let wineWindowsVersion, !wineWindowsVersion.hasPrefix("win") {
             throw PortError("Recipe \(id) windows version must start with win.")
         }
@@ -119,15 +143,19 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
                 throw PortError("Recipe \(id) wineD3DRenderer must be gl, vulkan, gdi, or no3d.")
             }
         }
+        guard RendererPackage.knownIDs.contains(rendererID) else {
+            throw PortError("Recipe \(id) renderer must be one of: \(RendererPackage.knownIDs.joined(separator: ", ")).")
+        }
         if let virtualDesktopSize,
-            virtualDesktopSize.caseInsensitiveCompare(Self.displayDesktopToken) != .orderedSame
+            virtualDesktopSize.caseInsensitiveCompare(Self.displayDesktopToken) != .orderedSame,
+            virtualDesktopSize.caseInsensitiveCompare(Self.fitDesktopToken) != .orderedSame
         {
             let parts = virtualDesktopSize.split(separator: "x")
             guard parts.count == 2,
                 let width = Int(parts[0]), width > 0,
                 let height = Int(parts[1]), height > 0
             else {
-                throw PortError("Recipe \(id) wineVirtualDesktop must be display or look like 1920x1080.")
+                throw PortError("Recipe \(id) wineVirtualDesktop must be display, fit, or look like 1920x1080.")
             }
         }
     }

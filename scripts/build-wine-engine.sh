@@ -1,10 +1,11 @@
 #!/bin/sh
-# Fetch the pinned Gcenx Wine Staging macOS package into .build/engine.
+# Fetch the pinned Silicon Cellar Wine Engine release into .build/engine.
 #
 # Pin: engine/manifest.json
-# Release source: https://github.com/Gcenx/macOS_Wine_builds/releases
+# Release source: https://github.com/NorseGaud/wine/releases (built by build/build-engine.sh in that repo)
+# To compile the Engine from source instead, run `make engine-source`.
 #
-# Needs: curl, tar (xz), shasum, python3. No local Wine compile.
+# Needs: curl, tar (xz), shasum, python3.
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -25,7 +26,7 @@ eval "$(
 import json, shlex, sys
 m = json.load(open(sys.argv[1]))
 version = m["version"]
-provider = m.get("provider", "gcenx")
+provider = m["provider"]
 print(f"VERSION={shlex.quote(version)}")
 print(f"PROVIDER={shlex.quote(provider)}")
 print(f"PIN_ID={shlex.quote(f'{provider}-{version}')}")
@@ -48,7 +49,7 @@ if [ "${FORCE_ENGINE_BUILD:-}" = "1" ]; then
 fi
 
 mkdir -p "$CACHE"
-ARCHIVE="$CACHE/wine-staging-${VERSION}-osx64.tar.xz"
+ARCHIVE="$CACHE/wine-${PIN_ID}.tar.xz"
 
 fetch() {
     url="$1"
@@ -70,7 +71,7 @@ EXTRACT="$CACHE/extract-$PIN_ID"
 rm -rf "$EXTRACT" "$PREFIX"
 mkdir -p "$EXTRACT" "$PREFIX"
 
-echo "Extracting Wine Staging ${VERSION}..."
+echo "Extracting Wine Engine ${PIN_ID}..."
 tar -xJf "$ARCHIVE" -C "$EXTRACT"
 
 WINE_TREE="$EXTRACT/$WINE_SUBDIR"

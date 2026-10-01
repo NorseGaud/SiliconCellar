@@ -4,9 +4,9 @@
 
 # Silicon Cellar
 
-Run Windows Steam games that you own on Apple Silicon. The app bundles Wine Staging. It does not include game files or a game license.
+Run Windows Steam games that you own on Apple Silicon. The app bundles Wine. It does not include game files or a game license.
 
-> **Limited time.** macOS warns that support for Intel-based apps is ending. Silicon Cellar bundles Wine Staging, which still runs as Intel code under Rosetta. Enjoy it while you can.
+> **Limited time.** macOS warns that support for Intel-based apps is ending. Silicon Cellar bundles Wine, which still runs as Intel code under Rosetta. Enjoy it while you can.
 >
 > <p align="center">
 >   <img src="images/ending-support-intel.png" alt="macOS alert: Support Ending for Intel-based Apps" width="480">
@@ -16,7 +16,7 @@ Run Windows Steam games that you own on Apple Silicon. The app bundles Wine Stag
 
 - An Apple Silicon Mac
 - Rosetta
-- Wine Staging 11.x bundled in the app (`Contents/Resources/Engine`). Packaging downloads a pinned [Gcenx macOS Wine build](https://github.com/Gcenx/macOS_Wine_builds/releases).
+- The Wine Engine bundled in the app (`Contents/Resources/Engine`). It is Wine 11.0 from the CodeWeavers CrossOver 26.3 source with Silicon Cellar fixes, built in [NorseGaud/wine](https://github.com/NorseGaud/wine). Packaging downloads the pinned [release](https://github.com/NorseGaud/wine/releases).
 - A Steam account that owns the game
 
 ## Install
@@ -36,7 +36,7 @@ cd ~/DEV/siliconcellar
 make
 ```
 
-Bare `make` runs lint, tests, a debug build, a fresh Engine fetch from the pinned Gcenx release, then the signed and notarized release DMG. See [RELEASING.md](RELEASING.md) for credentials.
+Bare `make` runs lint, tests, a debug build, a fresh Engine fetch from the pinned NorseGaud/wine release, then the signed and notarized release DMG. See [RELEASING.md](RELEASING.md) for credentials.
 
 CLI binary: `.build/debug/siliconcellar-cli`  
 App bundle: `dist/SiliconCellar.app`  
@@ -66,6 +66,23 @@ Copy `Recipes/spacewar.json` and change the fields:
 
 Put the file in `Recipes/` or in `~/Library/Application Support/SiliconCellar/Recipes/`. The `id` must match the file name. `steamID` is the Steam app number. `installFolder` is the Steam `installdir` name.
 
+### Renderer
+
+The optional `renderer` field selects the Direct3D layer for the game's executable. Steam and other games keep Wine's own layers.
+
+| `renderer` | Layer | Licence |
+| --- | --- | --- |
+| `wine` (default) | Wine wined3d (Direct3D 9 to 11) and vkd3d (Direct3D 12) | LGPL 2.1 |
+| `dxvk` | DXVK-Sikarugir-async v1.10.3 (Direct3D 9 to 11 on Vulkan) | zlib |
+| `dxmt` | DXMT v0.80-213-g4ddb20e (Direct3D 10 and 11 on Metal) | LGPL 2.1 |
+| `dxmt-v0.72` | DXMT v0.72 | MIT |
+| `d3dmetal` | Apple D3DMetal 4.0 beta 2 (Direct3D 11 and 12 on Metal) | Apple EA18380 |
+| `d3dmetal-3.0` | Apple D3DMetal 3.0 | Apple EA18380 |
+
+At the first **Play**, Silicon Cellar downloads the pinned package from [NorseGaud/siliconcellar-renderers](https://github.com/NorseGaud/siliconcellar-renderers/releases/tag/r1) into `~/Library/Application Support/SiliconCellar/renderers/<renderer>`, and checks its SHA-256. Each package contains the unchanged upstream files and their licences. Then Silicon Cellar writes `HKCU\Software\Wine\AppDefaults\<executable>\SiliconCellar\DllPath` (and `D3DSharedPath` for D3DMetal). The Engine loads the package DLLs for that executable only. Keep `dllOverrides` at `dxgi,d3d11,d3d12=n,b` (or include the DLLs of the layer).
+
+Before a game uses D3DMetal, you must accept Apple's licence. The app shows it at the first **Play**. In the CLI, read `renderers/d3dmetal/License.rtf`, then run `siliconcellar accept-apple-license`. The licence permits use only to develop, test, or evaluate games, and only for non-commercial purposes.
+
 ## CLI
 
 ```sh
@@ -77,6 +94,7 @@ siliconcellar install --game spacewar
 siliconcellar uninstall --game spacewar
 siliconcellar play --game spacewar
 siliconcellar stop --game spacewar
+siliconcellar accept-apple-license
 ```
 
 Optional: `--data-root PATH`, `--recipes PATH`, `SILICONCELLAR_WINE`, `SILICONCELLAR_RECIPES`.
@@ -103,17 +121,23 @@ The tool looks for Wine in this order:
 2. `SiliconCellar.app/Contents/Resources/Engine/bin/wine` (bundled)
 3. `~/Library/Application Support/SiliconCellar/Wine/Wine Staging.app/.../wine` (one-release fallback)
 
-Pin and fetch script: `engine/manifest.json` and `scripts/build-wine-engine.sh` (Gcenx Staging tarball).
+Pin and fetch script: `engine/manifest.json` and `scripts/build-wine-engine.sh` (release tarball). To compile the same tag from source, run `make engine-source`. That clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs its `build/build-engine.sh` (hours; needs x86_64 Homebrew in `/usr/local`, see `build/README.md` there).
+
+The Engine records its ID in `Engine/.siliconcellar-engine-version`. When the ID changes (for example after an app update), the next Steam launch runs `wineboot --update` in the shared prefix. Steam and the games stay.
+
+The CrossOver-based Engine keeps the Windows profile in `C:\users\crossover`. On the first update from an older Engine, the app moves the old profile folder (named after your Mac user) there and leaves a link with the old name. The app sets `CX_REPORT_REAL_USERNAME=1`, so Windows programs still see your Mac user name. Steam needs this to keep the saved sign-in.
+
+The app ships the Wine licence (`Contents/Resources/Licenses/Wine-LGPL.txt`) and the source link (`Wine-SOURCE.txt`). The licences of the bundled libraries are in `Contents/Resources/Engine/share/doc`.
 
 ## Network
 
 Silicon Cellar starts these HTTPS connections. A firewall may ask you to allow them.
 
-**Gcenx Wine Staging package (package time only)**
+**Wine Engine package (package time only)**
 
 - When: local `make engine` / `make app` / `make` if Engine is missing or forced
 - Host: `github.com` (release assets), TCP 443
-- Why: download the pinned `wine-staging-*-osx64.tar.xz` from [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds/releases)
+- Why: download the pinned `siliconcellar-wine-*-x86_64.tar.xz` from [NorseGaud/wine](https://github.com/NorseGaud/wine/releases)
 
 **Official Steam installer**
 
@@ -123,9 +147,44 @@ Silicon Cellar starts these HTTPS connections. A firewall may ask you to allow t
 - URL: `https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe`
 - Why: install the official Steam client in the shared Wine prefix. Setup checks the SHA-256 before the installer runs.
 
+**Renderer packages**
+
+- When: first `play` of a game whose recipe sets a `renderer` other than `wine`, if the package is not already installed with the pinned SHA-256
+- Command: `/usr/bin/curl` with `--proto =https` and `--proto-redir =https`
+- Host: `github.com` (release assets), TCP 443
+- URL: `https://github.com/NorseGaud/siliconcellar-renderers/releases/download/r1/<renderer>.tar.xz`
+- Why: install DXVK, DXMT, or D3DMetal. Play checks the SHA-256 before it extracts the package.
+
 The Steam client talks to Valve servers for sign-in, ownership, game files, and updates. A game may open more connections. Silicon Cellar does not control those.
 
 The toolkit does not send analytics.
+
+## Roadmap
+
+Do these items in order. Each item gets its own design, plan, and tests. After each item, the app must build, pass tests, and run the current games. Fork third-party code into the NorseGaud GitHub account when we need a copy.
+
+- [x] **1. Engine.** Fork the CodeWeavers CrossOver 26.3 source (`crossover-sources-26.3.0.tar.gz`, LGPL) into `NorseGaud/wine`. Change `make engine` to build that fork instead of downloading Gcenx Wine Staging. Done in release [`sc-26.3.0-2`](https://github.com/NorseGaud/wine/releases/tag/sc-26.3.0-2). The D3DMetal load check moved to item 2. Add these Wine fixes:
+  - `BOOLEAN` syscall arguments: clang assumes that callers extend small arguments, but Windows callers set only the low byte. `NtQueryDirectoryObject` then misreads its flags, and Path of Exile 2 freezes after login. Backport the upstream Wine fix (`d1415ab24e`, `f43402cde3`, test `565091afa4`), which wraps every affected syscall.
+  - San Andreas DE: add `--in-process-gpu --use-gl=angle --use-angle=swiftshader` to `SocialClubHelper.exe` so Rockstar sign-in works. The recipe sets `SILICONCELLAR_CHILD_ARGS`.
+  - Controllers: build `winebus` with SDL2.
+  - Age of Mythology: Retold: fit fullscreen below the MacBook notch in `winemac`. The recipe sets the `FullscreenBelowNotch` Mac driver option (`macDriverOptions`).
+  - Add the Wine LGPL notice and a source link to the app.
+- [x] **2. Renderers.** Add the recipe `renderer` field (see [Renderer](#renderer)). Packages are in release [`r1`](https://github.com/NorseGaud/siliconcellar-renderers/releases/tag/r1) of [NorseGaud/siliconcellar-renderers](https://github.com/NorseGaud/siliconcellar-renderers). Its `build-packages.sh` makes them from pinned inputs:
+  - DXVK and DXMT: from the Sikarugir renderer package ([Sikarugir-App/Wrapper](https://github.com/Sikarugir-App/Wrapper/releases) `Template-1.0.15.tar.xz`, SHA-256 `34273bcce885ce5a7fd6937af9ea344bb9961de7d55d6193f7413142e835c8c3`). Upstream [DXMT v0.72](https://github.com/3Shain/dxmt/releases/tag/v0.72) for Skyrim, because v0.80 crashes after the intro. The Skyrim recipe uses `dxmt-v0.72`.
+  - D3DMetal: the unchanged `redist` folder of Apple's "Evaluation environment for Windows games", with Apple's `License.rtf` and `Acknowledgements.rtf`. The Template also contains D3DMetal 3.0, but the package uses Apple's DMG so that it has Apple's licence files. Apple's licence (EA18380) permits non-commercial distribution of `D3DMetal.framework` and of the files in `/redist`. The default is 4.0 beta 2 (DMG SHA-256 `6248a0edc61553790753e5e9c060b8e53c940ed197f11409dcc34a35e05becc1`). The fallback is 3.0 (DMG SHA-256 `d49395fb07e536804d1da0858590e53f6aa6fab12512e18fd80a74c87f9f063c`). The app shows Apple's licence before the first D3DMetal game.
+  - Engine [`sc-26.3.0-4`](https://github.com/NorseGaud/wine/releases/tag/sc-26.3.0-4): Steam and the game share one Wine session, so an environment variable cannot select the layer for one game. The Engine reads `AppDefaults\<executable>\SiliconCellar\DllPath` and `D3DSharedPath` when a process starts. This replaces the closed CrossOver `cxcompatdb.so`. The folder can also add DLLs that Wine does not have, such as DXMT `winemetal.dll`.
+  - Remove the old cleanup that deleted `/Applications/Game Porting Toolkit.app`.
+- [ ] **3. Launchers.** Add a `launcher` field to recipes: `steam` or `battlenet`. Add the Battle.net install, sign-in, and play flow with the official Blizzard installer (pinned SHA-256). Allow recipes without a `steamID`. Add Diablo II: Resurrected (`D2R.exe`, install folder `Diablo II Resurrected`).
+- [ ] **4. Per-game fixes.**
+  - Witcher 3: fork [tholtman1-del/witcher3-crossover-fix](https://github.com/tholtman1-del/witcher3-crossover-fix) (MIT) to NorseGaud. Build the FidelityFX proxy ourselves. Install it before play and remove it on uninstall.
+  - Company of Heroes 3: use the Wine Staging `ucrtbase.dll`.
+  - Age of Empires III and Elden Ring: seed default graphics settings.
+  - Red Alert 2 and Heroes III: use cnc-ddraw.
+  - Zero Hour: install the community GeneralsOnline release (pinned SHA-256).
+  - Heroes III: apply the stereo audio fix by Narzoul.
+  - Age of Empires II: cache the DLC check that slows the game. This patches game code, so a game update can break it.
+- [ ] **5. Shader pre-build.** Build DXMT shader pipelines before play for Counter-Strike 2 and Overwatch to reduce first-play stutter.
+- [ ] **6. Re-test every recipe.** Pick the working renderer and launcher for each recipe and record it in the recipe.
 
 ## Support
 

@@ -7,6 +7,8 @@
   "executableRelativePath": "Gameface/Binaries/Win64/SanAndreas.exe",
   "wineWindowsVersion": "win10",
   "steamArguments": ["-cef-disable-gpu"],
-  "environment": {},
+  "environment": {
+    "SILICONCELLAR_CHILD_ARGS": "SocialClubHelper.exe=--in-process-gpu --use-gl=angle --use-angle=swiftshader"
+  },
   "dllOverrides": "dxgi,d3d11,d3d12=n,b"
 }

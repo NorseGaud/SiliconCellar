@@ -51,6 +51,15 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
             return ""
         }
         if arguments.first == "winecfg" { return "" }
+        if executable.lastPathComponent == "tar", let index = arguments.firstIndex(of: "-C"), arguments.count > index + 1 {
+            let destination = URL(fileURLWithPath: arguments[index + 1])
+            try FileManager.default.createDirectory(
+                at: destination.appendingPathComponent("wine/x86_64-windows"),
+                withIntermediateDirectories: true
+            )
+            try Data("licence".utf8).write(to: destination.appendingPathComponent("License.rtf"))
+            return ""
+        }
         if executable.lastPathComponent == "curl" {
             guard let outputIndex = arguments.firstIndex(of: "--output"), arguments.count > outputIndex + 1 else {
                 throw PortError("curl missing --output")
@@ -181,6 +190,198 @@ final class RuntimeTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: env.runtime.prefix.appendingPathComponent("system.reg").path))
         let desktop = env.runtime.prefix.appendingPathComponent("drive_c/users/player/Desktop")
         XCTAssertFalse((try? desktop.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true)
+    }
+
+    func testPrepareUpdatesPrefixWhenMarkerHasNoEngineID() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v1\n")
+        env.runtime.engineID = "engine-a"
+        try env.runtime.prepare()
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+        XCTAssertEqual(try String(contentsOf: env.runtime.readyMarker, encoding: .utf8), "runtime-v2 engine-a\n")
+    }
+
+    func testPrepareSkipsUpdateForSameEngineID() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v2 engine-a\n")
+        env.runtime.engineID = "engine-a"
+        try env.runtime.prepare()
+        XCTAssertFalse(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+        XCTAssertEqual(try String(contentsOf: env.runtime.readyMarker, encoding: .utf8), "runtime-v2 engine-a\n")
+    }
+
+    func testPrepareUpdatesPrefixWhenEngineIDChanges() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v2 engine-a\n")
+        env.runtime.engineID = "engine-b"
+        try env.runtime.prepare()
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+        XCTAssertEqual(try String(contentsOf: env.runtime.readyMarker, encoding: .utf8), "runtime-v2 engine-b\n")
+    }
+
+    func testEngineUpdateMovesOldUserProfileToCrossOverName() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v1\n")
+        let users = env.runtime.prefix.appendingPathComponent("drive_c/users")
+        try writeUserFile(users, "Public/Documents/shared.txt")
+        try writeUserFile(users, "player/Documents/My Games/save.dat")
+        try env.runtime.prepare()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: users.appendingPathComponent("crossover/Documents/My Games/save.dat").path))
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: users.appendingPathComponent("player").path), "crossover")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: users.appendingPathComponent("Public/Documents/shared.txt").path))
+    }
+
+    func testEngineUpdateEndsWineSessionAfterUpdate() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v1\n")
+        try env.runtime.prepare()
+        let update = try XCTUnwrap(env.commands.ran.firstIndex { $0.arguments == ["wineboot", "--update"] })
+        let endSession = try XCTUnwrap(env.commands.ran.firstIndex { $0.name == "wineserver" && $0.arguments == ["-k"] })
+        XCTAssertGreaterThan(endSession, update)
+    }
+
+    func testEngineUpdateKeepsProfilesWhenCrossOverProfileExists() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v1\n")
+        let users = env.runtime.prefix.appendingPathComponent("drive_c/users")
+        try writeUserFile(users, "player/Documents/old.dat")
+        try writeUserFile(users, "crossover/Documents/new.dat")
+        try env.runtime.prepare()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: users.appendingPathComponent("player/Documents/old.dat").path))
+        XCTAssertThrowsError(try FileManager.default.destinationOfSymbolicLink(atPath: users.appendingPathComponent("player").path))
+    }
+
+    private func writeUserFile(_ users: URL, _ relativePath: String) throws {
+        let file = users.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("data".utf8).write(to: file)
+    }
+
+    func testAppDefaultsWriteMacDriverOptionsForExecutable() throws {
+        var recipe = Recipe(id: "aom", title: "AoM", steamID: "1", installFolder: "AoM", executable: "AoM.exe")
+        recipe.macDriverOptions = ["FullscreenBelowNotch": "y"]
+        let env = try makeEnvironment(recipe: recipe)
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.applyWineAppDefaults()
+        let expected = [
+            "reg", "add", "HKCU\\Software\\Wine\\AppDefaults\\AoM.exe\\Mac Driver",
+            "/v", "FullscreenBelowNotch", "/t", "REG_SZ", "/d", "y", "/f",
+        ]
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == expected })
+    }
+
+    func testRendererPackageInstallsOnceAndWritesDllPath() throws {
+        let env = try makeRendererEnvironment(renderer: "dxmt")
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let rendererFolder = try XCTUnwrap(try env.runtime.prepareRenderer())
+        XCTAssertEqual(rendererFolder.path, env.root.appendingPathComponent("renderers/dxmt").path)
+        XCTAssertTrue(env.commands.ran.contains { $0.name == "curl" && $0.arguments.last == RendererPackage.releaseURL + "/dxmt.tar.xz" })
+        XCTAssertTrue(env.commands.ran.contains { $0.name == "tar" })
+        XCTAssertEqual(try env.runtime.prepareRenderer(), rendererFolder)
+        XCTAssertEqual(env.commands.ran.filter { $0.name == "curl" }.count, 1)
+
+        try env.runtime.applyWineAppDefaults(rendererFolder: rendererFolder)
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["reg", "delete", Self.rendererKey, "/f"] })
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == Self.addRendererValue("DllPath", rendererFolder.appendingPathComponent("wine").path) })
+        XCTAssertFalse(env.commands.ran.contains { $0.arguments.contains("D3DSharedPath") })
+    }
+
+    func testD3DMetalNeedsAppleLicenseBeforeUse() throws {
+        let env = try makeRendererEnvironment(renderer: "d3dmetal")
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        XCTAssertThrowsError(try env.runtime.prepareRenderer()) { error in
+            XCTAssertEqual(
+                (error as? AppleLicenseRequired)?.licenseFile,
+                env.root.appendingPathComponent("renderers/d3dmetal/License.rtf")
+            )
+        }
+        try env.runtime.acceptAppleLicense()
+        let rendererFolder = try XCTUnwrap(try env.runtime.prepareRenderer())
+        try env.runtime.applyWineAppDefaults(rendererFolder: rendererFolder)
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == Self.addRendererValue("DllPath", rendererFolder.appendingPathComponent("wine").path) })
+        XCTAssertTrue(
+            env.commands.ran.contains {
+                $0.arguments == Self.addRendererValue("D3DSharedPath", rendererFolder.appendingPathComponent("external/libd3dshared.dylib").path)
+            })
+    }
+
+    func testWineRendererClearsAppRendererSettings() throws {
+        let env = try makeRendererEnvironment(renderer: nil)
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        XCTAssertNil(try env.runtime.prepareRenderer())
+        try env.runtime.applyWineAppDefaults(rendererFolder: nil)
+        XCTAssertFalse(env.commands.ran.contains { $0.name == "curl" })
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["reg", "delete", Self.rendererKey, "/f"] })
+        XCTAssertFalse(env.commands.ran.contains { $0.arguments.contains("DllPath") })
+    }
+
+    func testRendererArchiveWithWrongSHA256StopsPlay() throws {
+        let env = try makeRendererEnvironment(renderer: "dxvk")
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        env.runtime.rendererPackages = RendererPackage.all.map {
+            RendererPackage(id: $0.id, version: $0.version, sha256: String(repeating: "0", count: 64), appleLicenseID: $0.appleLicenseID)
+        }
+        XCTAssertThrowsError(try env.runtime.prepareRenderer())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: env.root.appendingPathComponent("renderers/dxvk").path))
+    }
+
+    private static let rendererKey = "HKCU\\Software\\Wine\\AppDefaults\\Spacewar.exe\\SiliconCellar"
+
+    private static func addRendererValue(_ name: String, _ value: String) -> [String] {
+        ["reg", "add", rendererKey, "/v", name, "/t", "REG_SZ", "/d", value, "/f"]
+    }
+
+    /// Renderer packages pinned to the fake download bytes, so the SHA-256 check passes.
+    private func makeRendererEnvironment(renderer: String?) throws -> Environment {
+        var recipe = Recipe(id: "spacewar", title: "Spacewar", steamID: "480", installFolder: "Spacewar", executable: "Spacewar.exe")
+        recipe.renderer = renderer
+        let env = try makeEnvironment(recipe: recipe)
+        let fakeDownloadSHA256 = SteamInstaller.digest(of: env.commands.installerBytes)
+        env.runtime.rendererPackages = RendererPackage.all.map {
+            RendererPackage(id: $0.id, version: $0.version, sha256: fakeDownloadSHA256, appleLicenseID: $0.appleLicenseID)
+        }
+        return env
+    }
+
+    func testWineEnvironmentReportsRealUserName() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        XCTAssertEqual(env.runtime.wineEnvironment()["CX_REPORT_REAL_USERNAME"], "1")
+    }
+
+    func testOpenSteamUpdatesPrefixAfterEngineChange() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        env.runtime.engineID = "engine-a"
+        try env.runtime.setup()
+        env.commands.ran.removeAll()
+        env.runtime.engineID = "engine-b"
+        try env.runtime.openSteam(play: false)
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+        XCTAssertTrue(env.runtime.isRuntimeCurrent)
+    }
+
+    func testEngineIDReadsEngineMarker() throws {
+        let engine = FileManager.default.temporaryDirectory.appendingPathComponent("cellar-engine-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: engine) }
+        try FileManager.default.createDirectory(at: engine.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        let wine = engine.appendingPathComponent("bin/wine")
+        XCTAssertEqual(EngineLocator.engineID(wine: wine), "unknown")
+        try "norsegaud-sc-26.3.0-1\n".write(
+            to: engine.appendingPathComponent(".siliconcellar-engine-version"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(EngineLocator.engineID(wine: wine), "norsegaud-sc-26.3.0-1")
+    }
+
+    private func writeExistingPrefix(_ env: Environment, readyMarker: String) throws {
+        try FileManager.default.createDirectory(at: env.runtime.prefix, withIntermediateDirectories: true)
+        try Data("WINE REG\n".utf8).write(to: env.runtime.prefix.appendingPathComponent("system.reg"))
+        try readyMarker.write(to: env.runtime.readyMarker, atomically: true, encoding: .utf8)
     }
 
     func testSignedInReadsLoginUsers() throws {
@@ -428,7 +629,22 @@ final class RuntimeTests: XCTestCase {
         env.commands.live = false
         env.runtime.installPollInterval = 0
         env.runtime.installTimeout = 0
+        env.runtime.sessionDropGrace = 0
         XCTAssertThrowsError(try env.runtime.installGame())
+    }
+
+    func testInstallSucceedsWhenSteamExitsAfterFilesAppear() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        try writeSignedIn(env)
+        env.commands.finishSteamInstallOnStart = true
+        env.commands.live = false
+        env.runtime.installPollInterval = 0
+        env.runtime.sessionDropGrace = 0
+        try env.runtime.installGame()
+        XCTAssertTrue(env.runtime.isGameInstalled)
+        XCTAssertTrue(env.sink.messages.contains(where: { $0.contains("finished installing") }))
     }
 
     func testUninstallStartsSteamURIAndRemovesFiles() throws {
@@ -673,6 +889,20 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(output.count, 200_000)
     }
 
+    func testCommandRunnerReturnsWhenChildKeepsPipeOpen() throws {
+        let runner = ProcessCommandRunner()
+        let began = Date()
+        let output = try runner.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "sleep 8 & echo done"],
+            environment: ["PATH": "/usr/bin:/bin"],
+            timeout: 5,
+            workingDirectory: nil
+        )
+        XCTAssertEqual(output.trimmingCharacters(in: .whitespacesAndNewlines), "done")
+        XCTAssertLessThan(Date().timeIntervalSince(began), 4)
+    }
+
     func testCommandRunnerRepeatedShortRunsComplete() throws {
         let runner = ProcessCommandRunner()
         for _ in 0..<50 {
@@ -838,6 +1068,7 @@ final class RuntimeTests: XCTestCase {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
         try env.runtime.setup()
+        env.commands.live = true
         env.steamClient.running = true
         env.runtime.steamWebHelperWrapper = Data("SCWRAP1-live".utf8)
         let cef = env.runtime.steamLibrary.appendingPathComponent("bin/cef/cef.win64")
