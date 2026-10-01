@@ -175,6 +175,31 @@ final class SnapshotTests: XCTestCase {
         XCTAssertFalse(snapshot.isInstalled)
     }
 
+    func testDownloadProgressFollowsTheFolderSteamFills() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manifest = root.appendingPathComponent("steamapps/appmanifest_480.acf")
+        let download = root.appendingPathComponent("steamapps/downloading/480")
+        try FileManager.default.createDirectory(at: download, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 25).write(to: download.appendingPathComponent("part.bin"))
+        try """
+        "AppState" { "appid" "480" "installdir" "Spacewar" "StateFlags" "1026" "BytesDownloaded" "0" "BytesToDownload" "100" }
+        """.write(to: manifest, atomically: true, encoding: .utf8)
+
+        let snapshot = LibrarySnapshot.inspect(
+            root: root,
+            runtimeReady: true,
+            signedIn: true,
+            gameExecutable: root.appendingPathComponent("missing.exe"),
+            manifest: manifest,
+            steamID: "480",
+            installFolder: "Spacewar",
+            wineSessionLive: true
+        )
+        XCTAssertEqual(snapshot.stage, .downloading)
+        XCTAssertEqual(snapshot.downloadFraction, 0.25)
+    }
+
     func testDownloadingIsNotInstalledOrRunning() {
         let snapshot = LibrarySnapshot(stage: .downloading, downloadFraction: 0.4, wineSessionLive: true)
         XCTAssertFalse(snapshot.isInstalled)

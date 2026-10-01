@@ -77,6 +77,8 @@ final class LibraryModel: ObservableObject {
     private var launcherUpConfirmations = 0
     private let launcherUpConfirmNeeded = 3
     private var gameWasRunning = false
+    /// True from the click until `library.perform` returns. Stop can end `busy` only when this is false.
+    private var actionInFlight = false
 
     var selected: Recipe? { recipes.first { $0.id == selectedID } }
     /// The launcher of the selected game. Steam when no game is selected (onboarding).
@@ -99,12 +101,33 @@ final class LibraryModel: ObservableObject {
     func stopLauncherSession() {
         try? library?.stopSession(gameID: selected?.id ?? Recipe.onboarding.id)
         appendStatus("Stopped \(launcherName).")
-        busy = false
-        activity = ""
-        backgroundReady = true
+        // An action that waits for the launcher ends at its next poll, then `run` ends the busy state.
+        if !actionInFlight { endAction() }
         SystemChrome.showMenuBarAndDock()
         refreshInstalled()
         refresh()
+    }
+
+    private func endAction() {
+        actionInFlight = false
+        busy = false
+        activity = ""
+        backgroundReady = hostMessage == nil
+    }
+
+    /// Saves the launcher for the selected game, then shows the steps of that launcher.
+    func chooseLauncher(_ launcher: Launcher) {
+        guard let library, let recipe = selected, recipe.launcherKind != launcher else { return }
+        do {
+            try library.setLauncher(launcher, gameID: recipe.id)
+        } catch {
+            presentPopup((error as? PortError)?.message ?? error.localizedDescription, retry: false)
+            return
+        }
+        recipes = recipes.map { $0.id == recipe.id ? $0.using(launcher) : $0 }
+        launcherUpConfirmations = 0
+        appendStatus("\(recipe.title) uses \(launcher.displayName).")
+        handleSelectionChange()
     }
 
     /// Actions that show Steam UI after the user clicks (install, sign-in, play, …).
@@ -120,6 +143,7 @@ final class LibraryModel: ObservableObject {
             recipes = try store.loadAll()
             selectedID = nil
             refreshHost()
+            if let library { recipes = recipes.map(library.applyingLauncherChoice) }
             library?.removeLegacyData()
             WineTerminal.closeStagingSessions()
             applySelectedFileStatus()
@@ -332,6 +356,7 @@ final class LibraryModel: ObservableObject {
             return
         }
         busy = true
+        actionInFlight = true
         error = nil
         popup = nil
         activity = action.rawValue
@@ -351,9 +376,7 @@ final class LibraryModel: ObservableObject {
             do {
                 try library.perform(action, gameID: gameID)
                 DispatchQueue.main.async {
-                    self.busy = false
-                    self.activity = ""
-                    self.backgroundReady = true
+                    self.endAction()
                     self.applySelectedFileStatus()
                     self.refreshInstalled()
                     self.refresh()
@@ -376,11 +399,16 @@ final class LibraryModel: ObservableObject {
                         }
                     }
                 }
+            } catch is LauncherStopped {
+                DispatchQueue.main.async {
+                    self.endAction()
+                    self.applySelectedFileStatus()
+                    self.refreshInstalled()
+                    self.refresh()
+                }
             } catch let licenseRequired as AppleLicenseRequired {
                 DispatchQueue.main.async {
-                    self.busy = false
-                    self.activity = ""
-                    self.backgroundReady = true
+                    self.endAction()
                     self.popup = AppPopup(
                         title: "Apple D3DMetal licence",
                         message: licenseRequired.message,
@@ -390,9 +418,7 @@ final class LibraryModel: ObservableObject {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.busy = false
-                    self.activity = ""
-                    self.backgroundReady = false
+                    self.endAction()
                     self.error = (error as? PortError)?.message ?? error.localizedDescription
                     self.presentPopup(self.error ?? error.localizedDescription, retry: false)
                     self.applySelectedFileStatus()
@@ -484,6 +510,9 @@ struct LibraryView: View {
                             title: recipe.title,
                             subtitle: recipe.launcherKind == .steam ? "Steam app \(recipe.steamAppID)" : recipe.launcherKind.displayName
                         )
+                        if recipe.supportedLaunchers.count > 1 {
+                            launcherPicker(for: recipe)
+                        }
                         if model.detailStatusReady {
                             actionSteps(includeGame: true, title: recipe.title)
                         } else {
@@ -504,6 +533,13 @@ struct LibraryView: View {
                     Text("This app does not include a game license. Use a \(model.launcherName) account that owns the game.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if model.selected?.launcherKind == .battleNet {
+                        Text(
+                            "Bought the game on Steam? Link your Steam account to your Battle.net account to see it in Battle.net: sign in at [account.battle.net](https://account.battle.net), then open Account Settings > Connections > Steam."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
                 .padding(24)
@@ -691,25 +727,25 @@ struct LibraryView: View {
 
         if includeGame {
             if model.installInProgress || model.snapshot.stage == .downloading {
+                // Stop ends the launcher session and cancels the install — not a running game.
                 splitStep(
                     3,
                     status: "Installing…",
                     done: false,
-                    actionTitle: "Install game",
-                    actionColor: StepColor.install,
-                    enabled: false
-                ) {}
-                // Stop ends the Steam session and cancels the install — not a running game.
-                splitStep(
-                    4,
-                    status: "Not ready to play",
-                    done: false,
-                    actionTitle: "Stop \(launcherName)",
+                    actionTitle: "Cancel install",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
                     model.run(.stop)
                 }
+                splitStep(
+                    4,
+                    status: "Not ready to play",
+                    done: false,
+                    actionTitle: "Play",
+                    actionColor: StepColor.play,
+                    enabled: false
+                ) {}
             } else if model.uninstallInProgress {
                 splitStep(
                     3,
@@ -723,12 +759,10 @@ struct LibraryView: View {
                     4,
                     status: "Not ready to play",
                     done: false,
-                    actionTitle: "Stop \(launcherName)",
-                    actionColor: StepColor.danger,
-                    enabled: true
-                ) {
-                    model.run(.stop)
-                }
+                    actionTitle: "Play",
+                    actionColor: StepColor.play,
+                    enabled: false
+                ) {}
             } else if model.snapshot.isInstalled {
                 splitStep(
                     3,
@@ -806,6 +840,22 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Steam or Battle.net, for a game that both sell. Each launcher has its own install of the game.
+    private func launcherPicker(for recipe: Recipe) -> some View {
+        Picker(
+            "Launcher",
+            selection: Binding(get: { recipe.launcherKind }, set: { model.chooseLauncher($0) })
+        ) {
+            ForEach(recipe.supportedLaunchers, id: \.self) { launcher in
+                Text(launcher.displayName).tag(launcher)
+            }
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .disabled(model.busy || model.snapshot.isRunning)
+        .help("Use the launcher of the store where you bought the game. Each launcher installs its own copy.")
+    }
+
     private static let stepFont = Font.title2.weight(.semibold)
     /// Keeps every action label the same width and the same font size.
     private static let widestActionTitle = "Sign out of Battle.net"
@@ -866,21 +916,27 @@ struct LibraryView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// The toolbar text. A game download beats the launcher log, and the log beats "starting".
+    private var sessionProgressText: String {
+        if model.installInProgress, let fraction = model.snapshot.downloadFraction {
+            return "Downloading \(model.selected?.title ?? "the game")… \(Int((fraction * 100).rounded()))%"
+        }
+        if !model.launchProgress.detail.isEmpty { return model.launchProgress.detail }
+        if model.installInProgress { return "Download is starting." }
+        return "\(model.launcherName) is starting."
+    }
+
     @ViewBuilder
     private var sessionProgress: some View {
         HStack(alignment: .center, spacing: 8) {
             ProgressView()
                 .controlSize(.small)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(
-                    model.launchProgress.detail.isEmpty
-                        ? "\(model.launcherName) is starting."
-                        : model.launchProgress.detail
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
+                Text(sessionProgressText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
                 if let fraction = model.launchProgress.fraction {
                     ProgressView(value: fraction)
                         .frame(maxWidth: 120)

@@ -1,5 +1,19 @@
 import Foundation
 
+/// Total size of the files in a folder, for download progress.
+enum FileSystemSize {
+    static func bytes(in folder: URL) -> Int64? {
+        guard let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return nil
+        }
+        var total: Int64 = 0
+        for case let file as URL in files {
+            total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        }
+        return total
+    }
+}
+
 public enum GameStage: String, Equatable, Sendable {
     case setup
     case signIn
@@ -119,9 +133,13 @@ public struct LibrarySnapshot: Equatable, Sendable {
             let valid =
                 SteamManifest.value("BytesDownloaded", in: text) != nil
                 && downloaded.isFinite && total.isFinite && downloaded >= 0 && downloaded <= total
+            // Steam writes BytesDownloaded only when the download ends, so read the folder it fills instead.
+            let inProgress = manifest?.deletingLastPathComponent().appendingPathComponent("downloading/\(steamID)")
+            let folderBytes = inProgress.flatMap(FileSystemSize.bytes(in:)) ?? 0
+            let fraction = folderBytes > 0 ? min(Double(folderBytes) / total, 1) : (fresh && valid ? downloaded / total : nil)
             return LibrarySnapshot(
                 stage: .downloading,
-                downloadFraction: fresh && valid ? downloaded / total : nil,
+                downloadFraction: fraction,
                 wineSessionLive: wineSessionLive,
                 launcherReady: launcherReady,
                 launcherWindowVisible: launcherWindowVisible

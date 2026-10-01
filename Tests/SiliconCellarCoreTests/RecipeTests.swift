@@ -94,6 +94,35 @@ final class RecipeTests: XCTestCase {
         XCTAssertThrowsError(try recipe.validate())
     }
 
+    func testRecipeWithBothStoresDefaultsToSteamAndCanUseBattleNet() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"d2r","title":"D2R","steamID":"2536520","battleNetProductCode":"OSI","installFolder":"D2R","executable":"D2R.exe"}"#
+        )
+        try recipe.validate()
+        XCTAssertEqual(recipe.supportedLaunchers, [.steam, .battleNet])
+        XCTAssertEqual(recipe.launcherKind, .steam)
+        XCTAssertEqual(recipe.using(.battleNet).launcherKind, .battleNet)
+        try recipe.using(.battleNet).validate()
+    }
+
+    func testRecipeIgnoresALauncherItCannotUse() throws {
+        let recipe = Recipe(id: "one", title: "One", steamID: "1", installFolder: "One", executable: "a.exe")
+        XCTAssertEqual(recipe.using(.battleNet).launcherKind, .steam)
+    }
+
+    func testBattleNetRecipeChecksASteamIDItHas() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"d2r","title":"D2R","steamID":"x1","battleNetProductCode":"OSI","installFolder":"D2R","executable":"D2R.exe"}"#
+        )
+        XCTAssertThrowsError(try recipe.using(.battleNet).validate())
+    }
+
+    func testProfileFoldersMustBeSafeRelativePaths() throws {
+        var recipe = Recipe(id: "one", title: "One", steamID: "1", installFolder: "One", executable: "a.exe")
+        recipe.profileFolders = ["../outside"]
+        XCTAssertThrowsError(try recipe.validate())
+    }
+
     func testSteamRecipeNeedsSteamID() throws {
         let recipe = try Self.decodeRecipe(#"{"id":"one","title":"One","installFolder":"One","executable":"a.exe"}"#)
         XCTAssertThrowsError(try recipe.validate())
@@ -155,8 +184,11 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "aom-retold" }?.wineMacDriverOptions["FullscreenBelowNotch"], "y")
         XCTAssertEqual(recipes.first { $0.id == "skyrim-se" }?.rendererID, "dxmt-v0.72")
         let diablo2 = try XCTUnwrap(recipes.first { $0.id == "d2r" })
-        XCTAssertEqual(diablo2.launcherKind, .battleNet)
+        XCTAssertEqual(diablo2.supportedLaunchers, [.steam, .battleNet])
+        XCTAssertEqual(diablo2.launcherKind, .steam)
+        XCTAssertEqual(diablo2.steamAppID, "2536520")
         XCTAssertEqual(diablo2.battleNetProductCode, "OSI")
+        XCTAssertEqual(diablo2.userProfileFolders, ["AppData/Local/Blizzard Entertainment/ClientSdk"])
         XCTAssertEqual(diablo2.executable, "D2R.exe")
         XCTAssertEqual(diablo2.installFolder, "Diablo II Resurrected")
         XCTAssertEqual(diablo2.rendererID, "d3dmetal")

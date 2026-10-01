@@ -24,6 +24,7 @@ public final class Runtime: @unchecked Sendable {
     public var steamWebHelperWrapper: Data = SteamWebHelper.wrapperBytes
     public var rendererPackages: [RendererPackage] = RendererPackage.all
     public var wineServerDirectory: URL = WineServerSocket.defaultDirectory
+    var stopRequests = LauncherStopRequests()
     /// The Engine that runs this prefix. A new ID makes `prepare()` update the prefix.
     public var engineID: String
 
@@ -53,6 +54,12 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public var prefix: URL { prefix(for: recipe.launcherKind) }
+
+    /// Waits between polls. Throws `LauncherStopped` when Stop closed this launcher during the wait.
+    func pauseBetweenPolls(_ interval: TimeInterval) throws {
+        Thread.sleep(forTimeInterval: interval)
+        if stopRequests.isRequested(recipe.launcherKind) { throw LauncherStopped(launcher: recipe.launcherKind) }
+    }
 
     private func prefix(for launcher: Launcher) -> URL {
         root.appendingPathComponent(launcher.prefixFolderName)
@@ -89,6 +96,11 @@ public final class Runtime: @unchecked Sendable {
     }
 
     var programFiles: URL { prefix.appendingPathComponent("drive_c/Program Files (x86)") }
+
+    private var windowsUsers: URL { prefix.appendingPathComponent("drive_c/users") }
+
+    /// The Engine names the Windows user "crossover".
+    var userProfile: URL { windowsUsers.appendingPathComponent("crossover") }
 
     public var steamLibrary: URL { programFiles.appendingPathComponent("Steam") }
 
@@ -304,7 +316,7 @@ public final class Runtime: @unchecked Sendable {
         }
         let deadline = Date().addingTimeInterval(90)
         while !files.fileExists(systemRegistry), Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.2)
+            try pauseBetweenPolls(0.2)
         }
         guard files.fileExists(systemRegistry) else {
             throw PortError("The Windows environment did not finish creating.")
@@ -407,6 +419,7 @@ public final class Runtime: @unchecked Sendable {
         try promoteLibraryManifest()
         try quarantineGameFiles()
         try seedGameFiles()
+        try createProfileFolders()
         try applyWineAppDefaults(rendererFolder: rendererFolder)
         try openSteam(play: true)
     }
@@ -481,7 +494,7 @@ public final class Runtime: @unchecked Sendable {
             let exe = steamLibrary.appendingPathComponent("steam.exe")
             let deadline = Date().addingTimeInterval(120)
             while !files.fileExists(exe), Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.5)
+                try pauseBetweenPolls(0.5)
             }
             guard files.fileExists(exe) else {
                 throw PortError("Steam client install did not produce steam.exe.")
@@ -510,7 +523,7 @@ public final class Runtime: @unchecked Sendable {
         while Date() < deadline {
             try? ensureSteamWebHelperWrapper()
             if files.fileExists(steamUI) { break }
-            Thread.sleep(forTimeInterval: 0.2)
+            try pauseBetweenPolls(0.2)
         }
         guard files.fileExists(steamUI) else {
             throw PortError("Steam did not finish downloading steamui.dll. Try Play again after Steam updates.")
@@ -676,6 +689,16 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
+    /// Create recipe folders under the Windows user profile that the game needs but does not create itself.
+    public func createProfileFolders() throws {
+        for relative in recipe.userProfileFolders {
+            let folder = userProfile.appendingPathComponent(relative, isDirectory: true)
+            guard !files.fileExists(folder) else { continue }
+            try files.createDirectory(folder)
+            sink.say("Created \(relative) so \(recipe.title) can run under Wine.")
+        }
+    }
+
     private func expandedSeedText(_ text: String) -> String {
         guard text.contains("{displayWidth}") || text.contains("{displayHeight}") else { return text }
         let size = seedDisplaySize()
@@ -796,7 +819,7 @@ public final class Runtime: @unchecked Sendable {
                 try? ensureSteamWebHelperWrapper()
                 return
             }
-            Thread.sleep(forTimeInterval: 0.2)
+            try pauseBetweenPolls(0.2)
         }
         guard steamClient.isFullyRunning(prefix: prefix) else {
             throw PortError("Steam did not open a window. Try Sign in again.")
@@ -829,7 +852,7 @@ public final class Runtime: @unchecked Sendable {
                 }
                 continue
             }
-            Thread.sleep(forTimeInterval: installPollInterval)
+            try pauseBetweenPolls(installPollInterval)
         }
         throw PortError("\(launcherName) did not finish \(work) \(recipe.title).")
     }
@@ -848,7 +871,7 @@ public final class Runtime: @unchecked Sendable {
         while Date() < deadline {
             if done() { return true }
             if isSessionLive { return false }
-            Thread.sleep(forTimeInterval: installPollInterval)
+            try pauseBetweenPolls(installPollInterval)
         }
         return done()
     }
@@ -1043,7 +1066,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     private func resetSteamHTMLCache() throws {
-        let users = prefix.appendingPathComponent("drive_c/users")
+        let users = windowsUsers
         guard files.fileExists(users) else { return }
         for user in (try? files.contentsOfDirectory(users)) ?? [] {
             let cache = user.appendingPathComponent("AppData/Local/Steam/htmlcache")
@@ -1054,8 +1077,8 @@ public final class Runtime: @unchecked Sendable {
     /// The CrossOver-based Engine always names the Windows user "crossover". Older Engines used the Mac user name,
     /// so move that profile once and keep the old name as a link for paths that games and Steam saved.
     private func moveUserProfileToEngineUserName() throws {
-        let users = prefix.appendingPathComponent("drive_c/users")
-        let engineProfile = users.appendingPathComponent("crossover")
+        let users = windowsUsers
+        let engineProfile = userProfile
         guard !files.fileExists(engineProfile) else { return }
         let oldProfiles = ((try? files.contentsOfDirectory(users)) ?? []).filter {
             $0.lastPathComponent != "Public" && !files.isSymbolicLink($0)
@@ -1066,7 +1089,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     private func isolateUserLinks() throws {
-        let users = prefix.appendingPathComponent("drive_c/users")
+        let users = windowsUsers
         guard files.fileExists(users) else { return }
         for user in (try? files.contentsOfDirectory(users)) ?? [] {
             for item in (try? files.contentsOfDirectory(user)) ?? [] {
@@ -1101,6 +1124,7 @@ public struct Library: @unchecked Sendable {
     let commands: CommandRunning
     let sink: StatusSink
     let frontmost: FrontmostActivating
+    private let stopRequests = LauncherStopRequests()
 
     public init(
         recipes: [Recipe],
@@ -1124,11 +1148,33 @@ public struct Library: @unchecked Sendable {
         self.frontmost = frontmost
     }
 
+    private var dataRoot: URL { dataRootOverride ?? AppPaths.supportRoot(home: home) }
+
+    private var launcherChoices: LauncherChoices {
+        LauncherChoices(file: dataRoot.appendingPathComponent(LauncherChoices.fileName), files: files)
+    }
+
+    /// The recipe with the launcher that the user chose for it. Steam (or the only launcher) when there is no choice.
+    public func applyingLauncherChoice(_ recipe: Recipe) -> Recipe {
+        launcherChoices.load()[recipe.id].map(recipe.using) ?? recipe
+    }
+
+    public func setLauncher(_ launcher: Launcher, gameID: String) throws {
+        let recipe = try recipe(id: gameID)
+        guard recipe.supportedLaunchers.contains(launcher) else {
+            throw PortError("\(recipe.title) cannot use \(launcher.displayName).")
+        }
+        try launcherChoices.save(launcher, gameID: gameID)
+    }
+
     public func runtime(for recipe: Recipe) -> Runtime {
-        let root = dataRootOverride ?? AppPaths.supportRoot(home: home)
-        return Runtime(
+        runtimeIgnoringChoice(for: applyingLauncherChoice(recipe))
+    }
+
+    private func runtimeIgnoringChoice(for recipe: Recipe) -> Runtime {
+        let runtime = Runtime(
             recipe: recipe,
-            root: root,
+            root: dataRoot,
             wine: wine,
             wineserver: wineserver,
             files: files,
@@ -1136,12 +1182,14 @@ public struct Library: @unchecked Sendable {
             sink: sink,
             frontmost: frontmost
         )
+        runtime.stopRequests = stopRequests
+        return runtime
     }
 
     public func stopAllSessions() {
         for launcher in Launcher.allCases {
-            guard let recipe = recipes.first(where: { $0.launcherKind == launcher }) else { continue }
-            stopSession(of: runtime(for: recipe))
+            guard let recipe = recipes.first(where: { $0.supportedLaunchers.contains(launcher) }) else { continue }
+            stopSession(of: runtimeIgnoringChoice(for: recipe.using(launcher)))
         }
     }
 
@@ -1151,6 +1199,7 @@ public struct Library: @unchecked Sendable {
     }
 
     private func stopSession(of launcherRuntime: Runtime) {
+        stopRequests.request(launcherRuntime.recipe.launcherKind)
         guard files.fileExists(launcherRuntime.prefix) else { return }
         try? launcherRuntime.stop()
     }
@@ -1176,11 +1225,12 @@ public struct Library: @unchecked Sendable {
     }
 
     private func performLocked(gameID: String, work: (Runtime) throws -> Void) throws {
-        let recipe = try recipe(id: gameID)
-        let selected = runtime(for: recipe)
+        let selected = runtime(for: try recipe(id: gameID))
         try files.createDirectory(selected.root)
-        let lock = try SessionLock(root: selected.root, launcher: recipe.launcherKind)
+        let lock = try SessionLock(root: selected.root, launcher: selected.recipe.launcherKind)
         defer { withExtendedLifetime(lock) {} }
+        // A Stop before this action does not end it.
+        stopRequests.clear(selected.recipe.launcherKind)
         try work(selected)
     }
 

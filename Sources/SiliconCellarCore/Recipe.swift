@@ -33,11 +33,11 @@ public enum Launcher: String, Codable, CaseIterable, Sendable {
 public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let title: String
-    /// Steam app number. Required for Steam recipes.
+    /// Steam app number. A recipe with it can use Steam.
     public let steamID: String?
-    /// `steam` (default) or `battlenet`.
+    /// Launcher to use. Without it, Steam when the recipe has `steamID`, else Battle.net.
     public var launcher: Launcher?
-    /// Battle.net product code for `--exec="launch <code>"` (for example `OSI`). Required for Battle.net recipes.
+    /// Battle.net product code for `--exec="launch <code>"` (for example `OSI`). A recipe with it can use Battle.net.
     public var battleNetProductCode: String?
     public let installFolder: String
     public let executable: String
@@ -50,6 +50,8 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var quarantineFiles: [String]?
     /// Relative paths under the install folder written before play (Wine launch fixes).
     public var seedFiles: [String: String]?
+    /// Folders under the Windows user profile to create before play (for example Blizzard `ClientSdk`).
+    public var profileFolders: [String]?
     /// When true, start Steam, then run `executable` through Wine instead of `-applaunch`.
     public var directLaunch: Bool?
     /// Wine `Direct3D` renderer for this executable (`gl`, `vulkan`, `gdi`, or `no3d`).
@@ -100,7 +102,21 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var steamAppID: String { steamID ?? "" }
-    public var launcherKind: Launcher { launcher ?? .steam }
+    /// Launchers this recipe can use, Steam first.
+    public var supportedLaunchers: [Launcher] {
+        var launchers: [Launcher] = []
+        if !steamAppID.isEmpty { launchers.append(.steam) }
+        if let battleNetProductCode, !battleNetProductCode.isEmpty { launchers.append(.battleNet) }
+        return launchers
+    }
+    public var launcherKind: Launcher { launcher ?? supportedLaunchers.first ?? .steam }
+    /// This recipe with `choice` as its launcher. Unchanged when the recipe cannot use `choice`.
+    public func using(_ choice: Launcher) -> Recipe {
+        guard supportedLaunchers.contains(choice) else { return self }
+        var recipe = self
+        recipe.launcher = choice
+        return recipe
+    }
     public var windowsVersion: String { wineWindowsVersion ?? "win10" }
     public var launchSteamArguments: [String] { steamArguments ?? Runtime.requiredSteamArguments }
     public var extraEnvironment: [String: String] { environment ?? [:] }
@@ -108,6 +124,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var launchesDirectly: Bool { directLaunch == true }
     public var filesToQuarantine: [String] { quarantineFiles ?? [] }
     public var filesToSeed: [String: String] { seedFiles ?? [:] }
+    public var userProfileFolders: [String] { profileFolders ?? [] }
     public var wineMacDriverOptions: [String: String] { macDriverOptions ?? [:] }
     public var rendererID: String {
         guard let renderer, !renderer.isEmpty else { return RendererPackage.wineID }
@@ -157,12 +174,12 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
             throw PortError("Recipe id must use ASCII letters, numbers, or hyphens.")
         }
         guard !title.isEmpty else { throw PortError("Recipe \(id) needs a title.") }
-        switch launcherKind {
-        case .steam:
+        if launcherKind == .steam || steamID != nil {
             guard !steamAppID.isEmpty, steamAppID.allSatisfy({ $0.isASCII && $0.isNumber }) else {
                 throw PortError("Recipe \(id) steamID must be digits only.")
             }
-        case .battleNet:
+        }
+        if launcherKind == .battleNet || battleNetProductCode != nil {
             guard let battleNetProductCode, !battleNetProductCode.isEmpty,
                 battleNetProductCode.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
             else {
@@ -179,6 +196,9 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         }
         for path in filesToSeed.keys {
             try Self.validateRelativePath(path, id: id)
+        }
+        for folder in userProfileFolders {
+            try Self.validateRelativePath(folder, id: id, field: "profileFolders")
         }
         if let wineWindowsVersion, !wineWindowsVersion.hasPrefix("win") {
             throw PortError("Recipe \(id) windows version must start with win.")
@@ -214,12 +234,14 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    private static func validateRelativePath(_ value: String, id: String) throws {
+    private static func validateRelativePath(_ value: String, id: String, field: String = "executableRelativePath")
+        throws
+    {
         let parts = value.split(separator: "/").map(String.init)
         guard !value.isEmpty, !value.hasPrefix("/"), !value.contains("\\"),
             !parts.contains(".."), !parts.contains(".")
         else {
-            throw PortError("Recipe \(id) executableRelativePath is not a safe relative path.")
+            throw PortError("Recipe \(id) \(field) is not a safe relative path.")
         }
     }
 }

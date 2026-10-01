@@ -68,7 +68,11 @@ Put the file in `Recipes/` or in `~/Library/Application Support/SiliconCellar/Re
 
 ### Launcher
 
-The optional `launcher` field is `steam` (default) or `battlenet`. A Battle.net recipe has no `steamID`. It sets `battleNetProductCode`, the code that Battle.net uses in `--exec="launch <code>"` (for example `OSI` for Diablo II: Resurrected). `installFolder` is the folder that Battle.net makes in `C:\Program Files (x86)`. See `Recipes/d2r.json`.
+A recipe with `steamID` can use Steam. A recipe with `battleNetProductCode` can use Battle.net. That code is the one that Battle.net uses in `--exec="launch <code>"` (for example `OSI` for Diablo II: Resurrected). For Battle.net, `installFolder` is the folder that Battle.net makes in `C:\Program Files (x86)`.
+
+A recipe with both can use either launcher. Steam is the default. In the app, choose **Steam** or **Battle.net** at the top of the game page. With the CLI, use `launcher --game ID --use steam|battlenet`. Silicon Cellar saves the choice in `launcher-choices.json` in the data folder. Each launcher has its own prefix, so each launcher installs its own copy of the game. Use the launcher of the store where you bought the game. The optional `launcher` field sets a fixed launcher for a recipe. See `Recipes/d2r.json`.
+
+The optional `profileFolders` field lists folders under the Windows user profile (`C:\users\crossover`) that Silicon Cellar creates before play. D2R from Steam needs `AppData/Local/Blizzard Entertainment/ClientSdk`. Without it, the game says that you were not online in the last 30 days.
 
 ### Renderer
 
@@ -115,9 +119,9 @@ Each launcher has its own Wine prefix in `~/Library/Application Support/SiliconC
 2. Run `steam` and sign in in the Steam window.
 3. Run `install`, then `play`. Play starts Steam with `-applaunch`.
 
-The Steam client owns sign-in, ownership, and updates. Only one Wine session may run. **Sign out** / `logout` clears local `loginusers.vdf` when Steam is not running. If Steam is open, sign out in the Steam window.
+The Steam client owns sign-in, ownership, and updates. **Sign out** / `logout` clears local `loginusers.vdf` when Steam is not running. If Steam is open, sign out in the Steam window.
 
-For a Battle.net game, the same steps use Battle.net. `setup` installs the official Battle.net client and opens it. Sign in in the Battle.net window. `install` opens the game page. Click **Install** there, and Silicon Cellar waits until Battle.net finishes. `play` sets the renderer, then runs `Battle.net.exe --exec="launch <code>"`. Silicon Cellar sets `Client.HardwareAcceleration` to `false` in `Battle.net.config`, because the Battle.net window can stay black in Wine. `logout` removes the saved account name. To end the sign-in, sign out in the Battle.net window.
+For a Battle.net game, the same steps use Battle.net. `setup` installs the official Battle.net client and opens it. Sign in in the Battle.net window. `install` opens the game page. Click **Install** there, and Silicon Cellar waits until Battle.net finishes. `play` sets the renderer, then runs `Battle.net.exe --exec="launch <code>"`. Silicon Cellar sets `Client.HardwareAcceleration` to `false` in `Battle.net.config`, because the Battle.net window can stay black in Wine. It also runs Battle.net with two Wine fixes. `WINE_SIMULATE_WRITECOPY=1` stops the page processes of Battle.net from crashing (only the loading icon shows without it). `--in-process-gpu` makes Chromium draw in the Battle.net window (the window stays white without it). `logout` removes the saved account name. To end the sign-in, sign out in the Battle.net window.
 
 ## Wine location
 
@@ -190,7 +194,8 @@ Do these items in order. Each item gets its own design, plan, and tests. After e
   - Remove the old cleanup that deleted `/Applications/Game Porting Toolkit.app`.
 - [ ] **3. Launchers.** Add a `launcher` field to recipes: `steam` or `battlenet` (see [Launcher](#launcher)). Add the Battle.net install, sign-in, and play flow with the official Blizzard installer (pinned SHA-256). Allow recipes without a `steamID`. Add Diablo II: Resurrected (`D2R.exe`, install folder `Diablo II Resurrected`, renderer `d3dmetal`).
   - Battle.net has its own prefix, `prefix-battlenet`. The process list does not show which prefix a `wineserver` serves, so Silicon Cellar checks the server socket of each prefix (`/tmp/.wine-<uid>/server-<device>-<inode>/socket`).
-  - The code and tests are done. To do: a live test with a Battle.net account, to confirm the sign-in mark (`Client.SavedAccountNames`) and the install mark (`.build.info` in the game folder).
+  - A recipe with both a `steamID` and a `battleNetProductCode` can use either launcher. Steam is the default, and the user chooses for each game. D2R has both (Steam app `2536520`).
+  - The code and tests are done. To do: a live test with a Battle.net account, to confirm the sign-in mark (`Client.SavedAccountNames`) and the install mark (`.build.info` in the game folder). Also a live test of D2R from Steam.
 - [ ] **4. Per-game fixes.**
   - Witcher 3: fork [tholtman1-del/witcher3-crossover-fix](https://github.com/tholtman1-del/witcher3-crossover-fix) (MIT) to NorseGaud. Build the FidelityFX proxy ourselves. Install it before play and remove it on uninstall.
   - Company of Heroes 3: use the Wine Staging `ucrtbase.dll`.

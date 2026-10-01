@@ -1,12 +1,13 @@
 {
   "id": "d2r",
   "title": "Diablo II: Resurrected",
-  "launcher": "battlenet",
+  "steamID": "2536520",
   "battleNetProductCode": "OSI",
   "installFolder": "Diablo II Resurrected",
   "executable": "D2R.exe",
   "wineWindowsVersion": "win10",
   "environment": {},
   "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "profileFolders": ["AppData/Local/Blizzard Entertainment/ClientSdk"],
   "renderer": "d3dmetal"
 }

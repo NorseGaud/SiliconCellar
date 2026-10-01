@@ -223,17 +223,95 @@ extension RuntimeTests {
         withExtendedLifetime(steamLock) {}
     }
 
-    func testStopSessionStopsOnlyTheLauncherOfThatGame() throws {
-        let env = try makeBattleNetEnvironment()
-        defer { try? FileManager.default.removeItem(at: env.root) }
-        let library = Library(
-            recipes: [Recipe.onboarding, Self.battleNetRecipe],
+    /// D2R as Steam and Battle.net both sell it.
+    static let bothStoresRecipe: Recipe = {
+        var recipe = Recipe(
+            id: "d2r",
+            title: "Diablo II: Resurrected",
+            steamID: "2536520",
+            installFolder: "Diablo II Resurrected",
+            executable: "D2R.exe"
+        )
+        recipe.battleNetProductCode = "OSI"
+        recipe.profileFolders = ["AppData/Local/Blizzard Entertainment/ClientSdk"]
+        return recipe
+    }()
+
+    func makeLibrary(_ env: Environment, recipes: [Recipe]) -> Library {
+        Library(
+            recipes: [Recipe.onboarding] + recipes,
             wine: env.runtime.wine,
             wineserver: env.runtime.wineserver,
             dataRootOverride: env.root,
             commands: env.commands,
             sink: env.sink
         )
+    }
+
+    func testLauncherChoiceIsSavedAndUsedForTheGame() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.bothStoresRecipe])
+        XCTAssertEqual(library.runtime(for: Self.bothStoresRecipe).prefix.lastPathComponent, "prefix")
+        try library.setLauncher(.battleNet, gameID: Self.bothStoresRecipe.id)
+        let reopened = makeLibrary(env, recipes: [Self.bothStoresRecipe])
+        XCTAssertEqual(reopened.runtime(for: Self.bothStoresRecipe).recipe.launcherKind, .battleNet)
+        XCTAssertEqual(reopened.runtime(for: Self.bothStoresRecipe).prefix.lastPathComponent, "prefix-battlenet")
+        XCTAssertEqual(reopened.applyingLauncherChoice(Self.bothStoresRecipe).launcherKind, .battleNet)
+        try reopened.setLauncher(.steam, gameID: Self.bothStoresRecipe.id)
+        XCTAssertEqual(library.runtime(for: Self.bothStoresRecipe).recipe.launcherKind, .steam)
+    }
+
+    func testStopEndsTheWaitsOfOnlyThatLauncherUntilTheNextAction() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.battleNetRecipe])
+        let waitingAction = library.runtime(for: Self.battleNetRecipe)
+        XCTAssertNoThrow(try waitingAction.pauseBetweenPolls(0))
+        try library.stopSession(gameID: Self.battleNetRecipe.id)
+        XCTAssertThrowsError(try waitingAction.pauseBetweenPolls(0)) { XCTAssertTrue($0 is LauncherStopped) }
+        XCTAssertNoThrow(try library.runtime(for: Recipe.onboarding).pauseBetweenPolls(0))
+        _ = try? library.perform(.check, gameID: Self.battleNetRecipe.id)
+        XCTAssertNoThrow(try library.runtime(for: Self.battleNetRecipe).pauseBetweenPolls(0))
+    }
+
+    func testLauncherChoiceMustBeALauncherOfTheGame() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.bothStoresRecipe])
+        XCTAssertThrowsError(try library.setLauncher(.battleNet, gameID: Recipe.onboarding.id))
+    }
+
+    func testStopAllSessionsStopsBattleNetWhenNoGameChoseIt() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.bothStoresRecipe])
+        let steamPrefix = library.runtime(for: Recipe.onboarding).prefix
+        for prefix in [steamPrefix, env.runtime.prefix] {
+            try FileManager.default.createDirectory(at: prefix, withIntermediateDirectories: true)
+        }
+        library.stopAllSessions()
+        let kills = env.commands.ran.filter { $0.name == "wineserver" && $0.arguments == ["-k"] }
+        XCTAssertEqual(Set(kills.map(\.prefix)), [steamPrefix.path, env.runtime.prefix.path])
+    }
+
+    func testCreateProfileFoldersMakesTheFoldersOfTheRecipe() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let runtime = makeSiblingRuntime(env, recipe: Self.bothStoresRecipe)
+        try runtime.createProfileFolders()
+        let clientSDK = runtime.prefix.appendingPathComponent(
+            "drive_c/users/crossover/AppData/Local/Blizzard Entertainment/ClientSdk"
+        )
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: clientSDK.path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+    }
+
+    func testStopSessionStopsOnlyTheLauncherOfThatGame() throws {
+        let env = try makeBattleNetEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.battleNetRecipe])
         for recipe in library.recipes {
             try FileManager.default.createDirectory(at: library.runtime(for: recipe).prefix, withIntermediateDirectories: true)
         }

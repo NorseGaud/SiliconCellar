@@ -273,6 +273,18 @@ public struct WorkspaceFrontmost: FrontmostActivating {
 }
 
 public enum SteamUIFocus {
+    /// Processes that own the visible Wine windows: the Engine processes plus every process named "wine".
+    /// Wine processes that the client starts (for example steamwebhelper) report their Windows path as the
+    /// executable, so the Engine path does not match them.
+    private static func visibleWineProcessIDs(for wineExecutable: URL) -> Set<Int32> {
+        let processesNamedWine = Set(
+            NSWorkspace.shared.runningApplications
+                .filter { $0.localizedName == "wine" }
+                .map(\.processIdentifier)
+        )
+        return processesNamedWine.union(wineProcessIDs(for: wineExecutable))
+    }
+
     public static func wineProcessIDs(for wineExecutable: URL) -> Set<Int32> {
         let running = NSWorkspace.shared.runningApplications.map {
             WineHost.RunningApp(executable: $0.executableURL, bundle: $0.bundleURL)
@@ -311,7 +323,7 @@ public enum SteamUIFocus {
     /// Raise a Wine window whose title contains `title` so the game can capture the cursor.
     @discardableResult
     public static func raiseWineWindow(titled title: String, wineExecutable: URL) -> Bool {
-        let wantedPIDs = wineProcessIDs(for: wineExecutable)
+        let wantedPIDs = visibleWineProcessIDs(for: wineExecutable)
         guard !wantedPIDs.isEmpty else { return false }
         let needle = title.lowercased()
         // Glide/D3D games often sit on a non-zero window layer and may start off-screen.
@@ -358,15 +370,15 @@ public enum SteamUIFocus {
     }
 
     private static func largestVisibleWineWindow(for wineExecutable: URL) -> [String: Any]? {
-        let wantedPIDs = wineProcessIDs(for: wineExecutable)
-        guard !wantedPIDs.isEmpty else { return nil }
+        let visibleProcessIDs = visibleWineProcessIDs(for: wineExecutable)
+        guard !visibleProcessIDs.isEmpty else { return nil }
         let windows =
             CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
         return
             windows
             .compactMap { window -> (area: Double, window: [String: Any])? in
-                guard let pid = window[kCGWindowOwnerPID as String] as? Int32, wantedPIDs.contains(pid),
+                guard let pid = window[kCGWindowOwnerPID as String] as? Int32, visibleProcessIDs.contains(pid),
                     (window[kCGWindowLayer as String] as? Int) == 0,
                     let bounds = window[kCGWindowBounds as String] as? [String: Any]
                 else { return nil }

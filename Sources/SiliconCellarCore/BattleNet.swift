@@ -70,9 +70,8 @@ extension Runtime {
         return files.fileExists(client) ? client : nil
     }
 
-    /// The Engine names the Windows user "crossover".
     public var battleNetConfig: URL {
-        prefix.appendingPathComponent("drive_c/users/crossover/AppData/Roaming/Battle.net/Battle.net.config")
+        userProfile.appendingPathComponent("AppData/Roaming/Battle.net/Battle.net.config")
     }
 
     var isBattleNetSignedIn: Bool {
@@ -118,7 +117,7 @@ extension Runtime {
         frontmost.bringToFront(executable: wine)
         let deadline = Date().addingTimeInterval(battleNetSetupTimeout)
         while Date() < deadline, battleNetClient == nil || isBattleNetInstallerRunning {
-            Thread.sleep(forTimeInterval: installPollInterval)
+            try pauseBetweenPolls(installPollInterval)
         }
         guard battleNetClient != nil else {
             throw PortError("The Battle.net installer did not finish. Choose Set Up again.")
@@ -185,6 +184,7 @@ extension Runtime {
     func playBattleNetGame() throws {
         try validateGameInstallation()
         let rendererFolder = try prepareRenderer()
+        try createProfileFolders()
         try applyWineAppDefaults(rendererFolder: rendererFolder)
         try openBattleNet(gamePage: true)
         sink.say("\(recipe.title) launch requested. Battle.net starts the game.")
