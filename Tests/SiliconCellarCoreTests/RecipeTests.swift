@@ -72,6 +72,36 @@ final class RecipeTests: XCTestCase {
         recipe.renderer = "vulkan"
         XCTAssertThrowsError(try recipe.validate())
     }
+
+    func testLauncherDefaultsToSteam() throws {
+        let recipe = Recipe(id: "one", title: "One", steamID: "1", installFolder: "One", executable: "a.exe")
+        XCTAssertEqual(recipe.launcherKind, .steam)
+    }
+
+    func testBattleNetRecipeNeedsNoSteamID() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"d2r","title":"D2R","launcher":"battlenet","battleNetProductCode":"OSI","installFolder":"D2R","executable":"D2R.exe"}"#
+        )
+        try recipe.validate()
+        XCTAssertEqual(recipe.launcherKind, .battleNet)
+        XCTAssertEqual(recipe.battleNetProductCode, "OSI")
+    }
+
+    func testBattleNetRecipeNeedsProductCode() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"d2r","title":"D2R","launcher":"battlenet","installFolder":"D2R","executable":"D2R.exe"}"#
+        )
+        XCTAssertThrowsError(try recipe.validate())
+    }
+
+    func testSteamRecipeNeedsSteamID() throws {
+        let recipe = try Self.decodeRecipe(#"{"id":"one","title":"One","installFolder":"One","executable":"a.exe"}"#)
+        XCTAssertThrowsError(try recipe.validate())
+    }
+
+    private static func decodeRecipe(_ json: String) throws -> Recipe {
+        try JSONDecoder().decode(Recipe.self, from: Data(json.utf8))
+    }
 }
 
 final class RecipeStoreTests: XCTestCase {
@@ -109,7 +139,7 @@ final class RecipeStoreTests: XCTestCase {
             "spacewar", "aoe4", "aoe2", "aoe3", "coh3", "cs2", "zero-hour", "red-alert2",
             "overwatch", "diablo4", "poe2", "hogwarts-legacy", "skyrim-se",
             "san-andreas-de", "heroes3", "elden-ring", "aom-retold", "mdk", "mdk2",
-            "witcher3",
+            "witcher3", "d2r",
         ]
         XCTAssertEqual(ids, Set(expected))
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.steamID, "38450")
@@ -124,6 +154,12 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.extraEnvironment["NGLIDE_ASPECT"], "0")
         XCTAssertEqual(recipes.first { $0.id == "aom-retold" }?.wineMacDriverOptions["FullscreenBelowNotch"], "y")
         XCTAssertEqual(recipes.first { $0.id == "skyrim-se" }?.rendererID, "dxmt-v0.72")
+        let diablo2 = try XCTUnwrap(recipes.first { $0.id == "d2r" })
+        XCTAssertEqual(diablo2.launcherKind, .battleNet)
+        XCTAssertEqual(diablo2.battleNetProductCode, "OSI")
+        XCTAssertEqual(diablo2.executable, "D2R.exe")
+        XCTAssertEqual(diablo2.installFolder, "Diablo II Resurrected")
+        XCTAssertEqual(diablo2.rendererID, "d3dmetal")
         XCTAssertEqual(
             recipes.first { $0.id == "san-andreas-de" }?.extraEnvironment["SILICONCELLAR_CHILD_ARGS"],
             "SocialClubHelper.exe=--in-process-gpu --use-gl=angle --use-angle=swiftshader"

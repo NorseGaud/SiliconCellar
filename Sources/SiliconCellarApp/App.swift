@@ -74,16 +74,18 @@ final class LibraryModel: ObservableObject {
     private var refreshInFlight = false
     private var refreshAgain = false
     /// Consecutive Steam-up polls before UI shows "Steam is running" (avoids orphan flicker).
-    private var steamUpConfirmations = 0
-    private let steamUpConfirmNeeded = 3
+    private var launcherUpConfirmations = 0
+    private let launcherUpConfirmNeeded = 3
     private var gameWasRunning = false
 
     var selected: Recipe? { recipes.first { $0.id == selectedID } }
+    /// The launcher of the selected game. Steam when no game is selected (onboarding).
+    var launcherName: String { (selected?.launcherKind ?? .steam).displayName }
     /// Stable Steam-up for buttons/labels — ignores brief false-positive polls.
-    var steamIsUpStable: Bool { steamUpConfirmations >= steamUpConfirmNeeded }
+    var launcherIsUpStable: Bool { launcherUpConfirmations >= launcherUpConfirmNeeded }
     /// True while an action runs, or while Steam is still starting (no window yet).
     var sessionBusy: Bool {
-        busy || homebrewBusy || (snapshot.wineSessionLive && !steamIsUpStable)
+        busy || homebrewBusy || (snapshot.wineSessionLive && !launcherIsUpStable)
     }
 
     func stopWineSessions() {
@@ -93,10 +95,10 @@ final class LibraryModel: ObservableObject {
         SystemChrome.showMenuBarAndDock()
     }
 
-    /// Always close Steam. Does not stop only the game.
-    func stopSteamSession() {
-        library?.stopAllSessions()
-        appendStatus("Stopped Steam.")
+    /// Close the launcher of the selected game (Steam when no game is selected). The other launcher keeps running.
+    func stopLauncherSession() {
+        try? library?.stopSession(gameID: selected?.id ?? Recipe.onboarding.id)
+        appendStatus("Stopped \(launcherName).")
         busy = false
         activity = ""
         backgroundReady = true
@@ -106,7 +108,7 @@ final class LibraryModel: ObservableObject {
     }
 
     /// Actions that show Steam UI after the user clicks (install, sign-in, play, …).
-    private static let steamFrontActions: Set<LibraryAction> = [
+    private static let launcherFrontActions: Set<LibraryAction> = [
         .setup, .steam, .install, .uninstall, .logout, .play,
     ]
 
@@ -204,7 +206,7 @@ final class LibraryModel: ObservableObject {
     var showsSessionProgress: Bool {
         if busy || homebrewBusy { return true }
         if !launchProgress.detail.isEmpty { return true }
-        if snapshot.wineSessionLive, !steamIsUpStable { return true }
+        if snapshot.wineSessionLive, !launcherIsUpStable { return true }
         return false
     }
 
@@ -216,14 +218,14 @@ final class LibraryModel: ObservableObject {
         }
         let recipe = selected ?? Recipe.onboarding
         let keepLive = snapshot.wineSessionLive
-        let keepSteam = snapshot.steamReady
-        let keepWindow = snapshot.steamWindowVisible
+        let keepSteam = snapshot.launcherReady
+        let keepWindow = snapshot.launcherWindowVisible
         let keepGame = snapshot.gameRunning
         snapshot = LibrarySnapshot.display(
             library.runtime(for: recipe).fileSnapshot(
                 wineSessionLive: keepLive,
-                steamReady: keepSteam,
-                steamWindowVisible: keepWindow,
+                launcherReady: keepSteam,
+                launcherWindowVisible: keepWindow,
                 gameRunning: keepGame
             ),
             activity: activity,
@@ -251,14 +253,14 @@ final class LibraryModel: ObservableObject {
         let selectedAtStart = selectedID
         let runtime = library.runtime(for: recipe)
         let keepWineLive = snapshot.wineSessionLive
-        let keepSteam = snapshot.steamReady
-        let keepWindow = snapshot.steamWindowVisible
+        let keepSteam = snapshot.launcherReady
+        let keepWindow = snapshot.launcherWindowVisible
         let keepGame = snapshot.gameRunning
         DispatchQueue.global(qos: .utility).async {
             let filesOnly = runtime.fileSnapshot(
                 wineSessionLive: keepWineLive,
-                steamReady: keepSteam,
-                steamWindowVisible: keepWindow,
+                launcherReady: keepSteam,
+                launcherWindowVisible: keepWindow,
                 gameRunning: keepGame
             )
             DispatchQueue.main.async {
@@ -278,12 +280,12 @@ final class LibraryModel: ObservableObject {
                 self.snapshot = LibrarySnapshot.display(session.0, activity: self.activity, busy: self.busy)
                 // Window visibility flickers when you switch apps or a game covers Steam.
                 // Once Steam was confirmed up, keep it up while the client process stays ready.
-                if !session.0.steamReady {
-                    self.steamUpConfirmations = 0
-                } else if session.0.steamWindowVisible {
-                    self.steamUpConfirmations = min(
-                        self.steamUpConfirmations + 1,
-                        self.steamUpConfirmNeeded
+                if !session.0.launcherReady {
+                    self.launcherUpConfirmations = 0
+                } else if session.0.launcherWindowVisible {
+                    self.launcherUpConfirmations = min(
+                        self.launcherUpConfirmations + 1,
+                        self.launcherUpConfirmNeeded
                     )
                 }
                 if self.gameWasRunning, !session.0.isRunning {
@@ -323,16 +325,10 @@ final class LibraryModel: ObservableObject {
         refreshHost()
         guard let library else { return }
         if selected == nil, [.install, .uninstall, .play].contains(action) { return }
-        // Cancel install / close Steam: kill the Steam session.
-        // Stop while a game is running: kill only the game (Steam stays open).
+        // Cancel install / close the launcher: kill the session of that launcher.
+        // Stop while a game is running: kill only the game (the launcher stays open).
         if action == .stop, !snapshot.isRunning {
-            library.stopAllSessions()
-            appendStatus("Stopped Steam.")
-            busy = false
-            activity = ""
-            backgroundReady = true
-            refreshInstalled()
-            refresh()
+            stopLauncherSession()
             return
         }
         busy = true
@@ -344,7 +340,7 @@ final class LibraryModel: ObservableObject {
         backgroundReady = false
         // One raise after the click so Steam shows for install / sign-in / play.
         // Do not keep re-raising — that fights the user when they return to this app.
-        if Self.steamFrontActions.contains(action) {
+        if Self.launcherFrontActions.contains(action) {
             let wine = library.wine
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 WorkspaceFrontmost().bringToFront(executable: wine)
@@ -375,7 +371,7 @@ final class LibraryModel: ObservableObject {
                                     timeout: 15
                                 )
                             }
-                        } else if Self.steamFrontActions.contains(action) {
+                        } else if Self.launcherFrontActions.contains(action) {
                             WorkspaceFrontmost().bringToFront(executable: wine)
                         }
                     }
@@ -402,7 +398,7 @@ final class LibraryModel: ObservableObject {
                     self.applySelectedFileStatus()
                     self.refreshInstalled()
                     self.refresh()
-                    if Self.steamFrontActions.contains(action) {
+                    if Self.launcherFrontActions.contains(action) {
                         WorkspaceFrontmost().bringToFront(executable: library.wine)
                     }
                 }
@@ -422,7 +418,7 @@ final class LibraryModel: ObservableObject {
     var showsStatusBar: Bool {
         if busy || homebrewBusy { return true }
         // Steam is up and idle — hide the log footer (green check is enough).
-        if steamIsUpStable { return false }
+        if launcherIsUpStable { return false }
         return sessionBusy || !statusLines.isEmpty
     }
 
@@ -486,7 +482,7 @@ struct LibraryView: View {
                     if let recipe = model.selected {
                         detailHeader(
                             title: recipe.title,
-                            subtitle: "Steam app \(recipe.steamID)"
+                            subtitle: recipe.launcherKind == .steam ? "Steam app \(recipe.steamAppID)" : recipe.launcherKind.displayName
                         )
                         if model.detailStatusReady {
                             actionSteps(includeGame: true, title: recipe.title)
@@ -505,7 +501,7 @@ struct LibraryView: View {
                             detailStatusLoading
                         }
                     }
-                    Text("This app does not include a game license. Use a Steam account that owns the game.")
+                    Text("This app does not include a game license. Use a \(model.launcherName) account that owns the game.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -585,21 +581,22 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func actionSteps(includeGame: Bool, title: String?) -> some View {
+        let launcherName = model.launcherName
         Text("Do these steps in order.")
             .font(.title3)
             .foregroundStyle(.secondary)
         if model.snapshot.needsSetup {
             Text(
                 title.map {
-                    "Install the Steam client for \($0)."
+                    "Install the \(launcherName) client for \($0)."
                 } ?? "Install the Steam client. Select a game after you sign in."
             )
             .foregroundStyle(.secondary)
-        } else if !model.steamIsUpStable {
+        } else if !model.launcherIsUpStable {
             Text(
                 model.snapshot.wineSessionLive
-                    ? "Wait until the Steam window opens."
-                    : "Start Steam, then continue with the next steps."
+                    ? "Wait until the \(launcherName) window opens."
+                    : "Start \(launcherName), then continue with the next steps."
             )
             .foregroundStyle(.secondary)
         } else if !model.snapshot.isSignedIn {
@@ -614,53 +611,53 @@ struct LibraryView: View {
                 .foregroundStyle(.secondary)
         }
 
-        let steamInstalled = !model.snapshot.needsSetup
+        let launcherInstalled = !model.snapshot.needsSetup
         let sessionLive = model.snapshot.wineSessionLive
-        let steamUp = model.steamIsUpStable
-        let steamActionBusy = model.busy && ["steam", "setup"].contains(model.activity)
+        let launcherUp = model.launcherIsUpStable
+        let launcherActionBusy = model.busy && ["steam", "setup"].contains(model.activity)
         // Starting = wineserver live, or Start Steam still in progress.
-        let steamStarting = (sessionLive || steamActionBusy) && !steamUp
+        let launcherStarting = (sessionLive || launcherActionBusy) && !launcherUp
         let signedIn = model.snapshot.isSignedIn
 
         if model.snapshot.needsSetup {
             splitStep(
                 1,
-                status: "Steam is not installed",
+                status: "\(launcherName) is not installed",
                 done: false,
-                actionTitle: "Install Steam",
+                actionTitle: "Install \(launcherName)",
                 actionColor: StepColor.setup,
                 enabled: model.backgroundReady
             ) {
                 model.run(.setup)
             }
-        } else if steamUp {
+        } else if launcherUp {
             splitStep(
                 1,
-                status: "Steam is running",
+                status: "\(launcherName) is running",
                 done: true,
-                actionTitle: "Stop Steam",
+                actionTitle: "Stop \(launcherName)",
                 actionColor: StepColor.danger,
                 enabled: true
             ) {
-                model.stopSteamSession()
+                model.stopLauncherSession()
             }
-        } else if steamStarting {
+        } else if launcherStarting {
             splitStep(
                 1,
-                status: "Steam is starting…",
+                status: "\(launcherName) is starting…",
                 done: false,
-                actionTitle: "Stop Steam",
+                actionTitle: "Stop \(launcherName)",
                 actionColor: StepColor.danger,
                 enabled: true
             ) {
-                model.stopSteamSession()
+                model.stopLauncherSession()
             }
         } else {
             splitStep(
                 1,
-                status: "Steam is installed",
+                status: "\(launcherName) is installed",
                 done: true,
-                actionTitle: "Start Steam",
+                actionTitle: "Start \(launcherName)",
                 actionColor: StepColor.setup,
                 enabled: model.backgroundReady
             ) {
@@ -673,9 +670,9 @@ struct LibraryView: View {
                 2,
                 status: "Signed in",
                 done: true,
-                actionTitle: "Sign out of Steam",
+                actionTitle: "Sign out of \(launcherName)",
                 actionColor: StepColor.danger,
-                enabled: steamUp
+                enabled: launcherUp
             ) {
                 model.run(.logout)
             }
@@ -686,7 +683,7 @@ struct LibraryView: View {
                 done: false,
                 actionTitle: "Sign in",
                 actionColor: StepColor.signIn,
-                enabled: steamInstalled && steamUp && !model.busy
+                enabled: launcherInstalled && launcherUp && !model.busy
             ) {
                 model.run(.steam)
             }
@@ -707,7 +704,7 @@ struct LibraryView: View {
                     4,
                     status: "Not ready to play",
                     done: false,
-                    actionTitle: "Stop Steam",
+                    actionTitle: "Stop \(launcherName)",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
@@ -726,7 +723,7 @@ struct LibraryView: View {
                     4,
                     status: "Not ready to play",
                     done: false,
-                    actionTitle: "Stop Steam",
+                    actionTitle: "Stop \(launcherName)",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
@@ -739,7 +736,7 @@ struct LibraryView: View {
                     done: true,
                     actionTitle: "Uninstall",
                     actionColor: StepColor.danger,
-                    enabled: steamUp && signedIn
+                    enabled: launcherUp && signedIn
                 ) {
                     model.run(.uninstall)
                 }
@@ -757,25 +754,25 @@ struct LibraryView: View {
                 } else {
                     splitStep(
                         4,
-                        status: steamUp ? "Ready to play" : "Start Steam to play",
+                        status: launcherUp ? "Ready to play" : "Start \(launcherName) to play",
                         done: false,
                         actionTitle: "Play",
                         actionColor: StepColor.play,
-                        enabled: steamUp
+                        enabled: launcherUp
                     ) {
                         model.run(.play)
                     }
                 }
             } else {
-                let installReady = steamUp && signedIn
+                let installReady = launcherUp && signedIn
                 let installHint =
                     installReady
                     ? "Game is not installed"
-                    : steamStarting && !steamUp
-                        ? "Wait until the Steam window opens"
-                        : steamUp
+                    : launcherStarting && !launcherUp
+                        ? "Wait until the \(launcherName) window opens"
+                        : launcherUp
                             ? "Sign in before you install"
-                            : "Start Steam before you install"
+                            : "Start \(launcherName) before you install"
                 splitStep(
                     3,
                     status: installHint,
@@ -811,7 +808,7 @@ struct LibraryView: View {
 
     private static let stepFont = Font.title2.weight(.semibold)
     /// Keeps every action label the same width and the same font size.
-    private static let widestActionTitle = "Sign out of Steam"
+    private static let widestActionTitle = "Sign out of Battle.net"
 
     private func splitStep(
         _ number: Int,
@@ -877,7 +874,7 @@ struct LibraryView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(
                     model.launchProgress.detail.isEmpty
-                        ? "Steam is starting."
+                        ? "\(model.launcherName) is starting."
                         : model.launchProgress.detail
                 )
                 .font(.caption)
@@ -894,7 +891,7 @@ struct LibraryView: View {
                 }
             }
         }
-        .help(model.statusLines.last ?? "Steam session")
+        .help(model.statusLines.last ?? "\(model.launcherName) session")
     }
 
 }

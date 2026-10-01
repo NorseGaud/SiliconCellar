@@ -12,16 +12,18 @@ func printUsage() {
         """
         siliconcellar <command> [--game ID] [--data-root PATH] [--recipes PATH]
 
+        The game's launcher is Steam or Battle.net (see list).
+
         Commands:
-          list              Show recipes
+          list              Show recipes and their launcher
           check             Show host and game status
-          setup             Create the prefix and install Steam
-          steam             Open the Steam window
-          logout            Clear local Steam sign-in if Steam is not running
-          install           Start install in Steam
-          uninstall         Start uninstall in Steam
-          play              Launch the game through Steam
-          stop              Stop Steam
+          setup             Create the launcher prefix and install the launcher
+          steam             Open the launcher window
+          logout            Clear the local launcher sign-in if the launcher is not running
+          install           Start the install in the launcher
+          uninstall         Start the uninstall in the launcher
+          play              Launch the game through the launcher
+          stop              Stop the game, or stop the launcher
           accept-apple-license
                             Accept Apple's licence for D3DMetal games
         """)
@@ -43,7 +45,10 @@ do {
     let recipes = try store.loadAll()
 
     if command == "list" {
-        for recipe in recipes { print("\(recipe.id)\t\(recipe.title)\tsteam \(recipe.steamID)") }
+        for recipe in recipes {
+            let launcher = recipe.launcherKind == .steam ? "steam \(recipe.steamAppID)" : recipe.launcherKind.rawValue
+            print("\(recipe.id)\t\(recipe.title)\t\(launcher)")
+        }
         exit(0)
     }
 

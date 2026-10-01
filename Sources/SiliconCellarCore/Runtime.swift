@@ -5,14 +5,16 @@ public final class Runtime: @unchecked Sendable {
     public let root: URL
     public let wine: URL
     public let wineserver: URL
-    private let files: FileSystem
-    private let commands: CommandRunning
-    private let sink: StatusSink
-    private let frontmost: FrontmostActivating
+    let files: FileSystem
+    let commands: CommandRunning
+    let sink: StatusSink
+    let frontmost: FrontmostActivating
     private let steamClient: SteamClientInspecting
     private let display: DisplaySizing
     public var expectedSteamSetupSHA256: String = SteamInstaller.sha256
+    public var expectedBattleNetSetupSHA256: String = BattleNetInstaller.sha256
     public var steamBootstrapTimeout: TimeInterval = 1800
+    public var battleNetSetupTimeout: TimeInterval = 1800
     public var installTimeout: TimeInterval = 7200
     public var uninstallTimeout: TimeInterval = 1800
     public var installPollInterval: TimeInterval = 0.2
@@ -21,6 +23,7 @@ public final class Runtime: @unchecked Sendable {
     public var steamClientWait: TimeInterval = 90
     public var steamWebHelperWrapper: Data = SteamWebHelper.wrapperBytes
     public var rendererPackages: [RendererPackage] = RendererPackage.all
+    public var wineServerDirectory: URL = WineServerSocket.defaultDirectory
     /// The Engine that runs this prefix. A new ID makes `prepare()` update the prefix.
     public var engineID: String
 
@@ -49,7 +52,11 @@ public final class Runtime: @unchecked Sendable {
         self.engineID = EngineLocator.engineID(wine: wine, files: files)
     }
 
-    public var prefix: URL { root.appendingPathComponent("prefix") }
+    public var prefix: URL { prefix(for: recipe.launcherKind) }
+
+    private func prefix(for launcher: Launcher) -> URL {
+        root.appendingPathComponent(launcher.prefixFolderName)
+    }
     private var systemRegistry: URL { prefix.appendingPathComponent("system.reg") }
     private var readyMarkerText: String { "runtime-v2 \(engineID)\n" }
 
@@ -60,7 +67,7 @@ public final class Runtime: @unchecked Sendable {
     }
     public var downloads: URL { root.appendingPathComponent("downloads") }
     public var logs: URL { root.appendingPathComponent("logs") }
-    public var readyMarker: URL { root.appendingPathComponent("runtime-ready") }
+    public var readyMarker: URL { root.appendingPathComponent(recipe.launcherKind.readyMarkerName) }
     public var renderersRoot: URL { root.appendingPathComponent("renderers") }
     public var appleLicenseMarker: URL { root.appendingPathComponent("apple-gptk-license-accepted") }
     private var rendererPackage: RendererPackage? { rendererPackages.first { $0.id == recipe.rendererID } }
@@ -68,13 +75,22 @@ public final class Runtime: @unchecked Sendable {
         steamLibrary.appendingPathComponent("config/loginusers.vdf")
     }
     public var isSignedIn: Bool {
+        if recipe.launcherKind == .battleNet { return isBattleNetSignedIn }
         guard files.fileExists(loginUsers), let data = try? files.read(loginUsers) else { return false }
         return SteamLoginUsers.isSignedIn(String(decoding: data, as: UTF8.self))
     }
 
-    public var steamLibrary: URL {
-        prefix.appendingPathComponent("drive_c/Program Files (x86)/Steam")
+    /// The launcher client files are in place (Steam: `steamui.dll`, Battle.net: `Battle.net.exe`).
+    public var isLauncherClientInstalled: Bool {
+        switch recipe.launcherKind {
+        case .steam: return files.fileExists(steamUI)
+        case .battleNet: return battleNetClient != nil
+        }
     }
+
+    var programFiles: URL { prefix.appendingPathComponent("drive_c/Program Files (x86)") }
+
+    public var steamLibrary: URL { programFiles.appendingPathComponent("Steam") }
 
     public var steam: URL? {
         let exe = steamLibrary.appendingPathComponent("steam.exe")
@@ -83,12 +99,17 @@ public final class Runtime: @unchecked Sendable {
 
     public var steamUI: URL { steamLibrary.appendingPathComponent("steamui.dll") }
 
-    public var game: URL? {
-        steamLibrary
-            .appendingPathComponent("steamapps/common")
-            .appendingPathComponent(recipe.installFolder)
-            .appendingPathComponent(recipe.gameRelativePath)
+    /// The folder that the launcher installs the game into.
+    public var gameFolder: URL {
+        switch recipe.launcherKind {
+        case .steam:
+            return steamLibrary.appendingPathComponent("steamapps/common").appendingPathComponent(recipe.installFolder)
+        case .battleNet:
+            return programFiles.appendingPathComponent(recipe.installFolder)
+        }
     }
+
+    public var game: URL? { gameFolder.appendingPathComponent(recipe.gameRelativePath) }
 
     public var manifest: URL? {
         manifestCandidates.first { files.fileExists($0) } ?? manifestCandidates.first
@@ -96,31 +117,38 @@ public final class Runtime: @unchecked Sendable {
 
     private var manifestCandidates: [URL] {
         [
-            steamLibrary.appendingPathComponent("steamapps/appmanifest_\(recipe.steamID).acf"),
-            steamLibrary
-                .appendingPathComponent("steamapps/common")
-                .appendingPathComponent(recipe.installFolder)
-                .appendingPathComponent("steamapps/appmanifest_\(recipe.steamID).acf"),
+            steamLibrary.appendingPathComponent("steamapps/appmanifest_\(recipe.steamAppID).acf"),
+            gameFolder.appendingPathComponent("steamapps/appmanifest_\(recipe.steamAppID).acf"),
         ]
     }
 
     public var isSessionLive: Bool {
         // Never call `wineserver -w` for polling — a cold launch often exceeds the short
         // timeout and falsely reports live, flipping Start Steam ↔ Steam is running.
-        guard let text = ProcessSteamClientInspector.processList(commands: commands) else {
+        guard let text = ProcessSteamClientInspector.processList(commands: commands),
+            WineSessionProcess.isWineserverRunning(in: text, wineserver: wineserver)
+        else {
             return false
         }
-        return WineSessionProcess.isWineserverRunning(in: text, wineserver: wineserver)
+        // The process list does not show which prefix a wineserver serves, so look for the socket of this prefix.
+        if isWineServerRunning(prefix: prefix) { return true }
+        // No socket for any launcher (for example Wine uses another server folder): any Engine wineserver counts.
+        return !Launcher.allCases.contains { isWineServerRunning(prefix: prefix(for: $0)) }
+    }
+
+    private func isWineServerRunning(prefix: URL) -> Bool {
+        WineServerSocket.url(prefix: prefix, in: wineServerDirectory).map(files.fileExists) ?? false
     }
 
     /// File/manifest check only — does not wait on wineserver.
     public var isGameInstalled: Bool {
+        if recipe.launcherKind == .battleNet { return isBattleNetGameInstalled }
         guard let game, files.fileExists(game), let manifest, files.fileExists(manifest),
             let data = try? files.read(manifest)
         else { return false }
         return SteamManifest.isCompleteInstall(
             text: String(decoding: data, as: UTF8.self),
-            steamID: recipe.steamID,
+            steamID: recipe.steamAppID,
             installFolder: recipe.installFolder
         )
     }
@@ -131,14 +159,22 @@ public final class Runtime: @unchecked Sendable {
         } ?? false
     }
 
+    /// Steam: Steam.exe plus the UI helper. Battle.net: Battle.net.exe.
+    private var isLauncherClientRunning: Bool {
+        switch recipe.launcherKind {
+        case .steam: return steamClient.isFullyRunning(prefix: prefix)
+        case .battleNet: return isBattleNetClientRunning
+        }
+    }
+
     public func snapshot(now: Date = Date()) -> LibrarySnapshot {
         let live = isSessionLive
-        let ready = live && steamClient.isFullyRunning(prefix: prefix)
+        let ready = live && isLauncherClientRunning
         return fileSnapshot(
             now: now,
             wineSessionLive: live,
-            steamReady: ready,
-            steamWindowVisible: ready && SteamUIFocus.hasVisibleWineWindow(for: wine),
+            launcherReady: ready,
+            launcherWindowVisible: ready && SteamUIFocus.hasVisibleWineWindow(for: wine),
             gameRunning: isGameRunning
         )
     }
@@ -147,21 +183,22 @@ public final class Runtime: @unchecked Sendable {
     public func fileSnapshot(
         now: Date = Date(),
         wineSessionLive: Bool = false,
-        steamReady: Bool = false,
-        steamWindowVisible: Bool = false,
+        launcherReady: Bool = false,
+        launcherWindowVisible: Bool = false,
         gameRunning: Bool = false
     ) -> LibrarySnapshot {
         LibrarySnapshot.inspect(
             root: root,
-            runtimeReady: files.fileExists(readyMarker) && files.fileExists(steamUI),
+            runtimeReady: files.fileExists(readyMarker) && isLauncherClientInstalled,
             signedIn: isSignedIn,
             gameExecutable: game,
-            manifest: manifest,
-            steamID: recipe.steamID,
+            manifest: recipe.launcherKind == .steam ? manifest : nil,
+            installComplete: recipe.launcherKind == .steam ? nil : isGameInstalled,
+            steamID: recipe.steamAppID,
             installFolder: recipe.installFolder,
             wineSessionLive: wineSessionLive,
-            steamReady: steamReady,
-            steamWindowVisible: steamWindowVisible,
+            launcherReady: launcherReady,
+            launcherWindowVisible: launcherWindowVisible,
             gameRunning: gameRunning,
             now: now,
             files: files
@@ -169,6 +206,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func launchProgress(wineSessionLive: Bool? = nil) -> SteamLaunchProgress {
+        guard recipe.launcherKind == .steam else { return SteamLaunchProgress() }
         let steamDirectory = steam?.deletingLastPathComponent()
         return SteamLaunchProgress.inspect(
             bootstrapLog: steamDirectory?.appendingPathComponent("logs/bootstrap_log.txt"),
@@ -183,8 +221,8 @@ public final class Runtime: @unchecked Sendable {
 
     public func inspectSession(now: Date = Date()) -> (LibrarySnapshot, SteamLaunchProgress) {
         let live = isSessionLive
-        // Steam ready only while wineserver is live — ignore dying steam.exe orphans.
-        let ready = live && steamClient.isFullyRunning(prefix: prefix)
+        // Launcher ready only while wineserver is live — ignore dying steam.exe orphans.
+        let ready = live && isLauncherClientRunning
         let windowVisible = ready && SteamUIFocus.hasVisibleWineWindow(for: wine)
         let running = isGameRunning
         // Steam client updates can drop a new cef.win64 helper mid-session; keep the wrap applied.
@@ -193,8 +231,8 @@ public final class Runtime: @unchecked Sendable {
             fileSnapshot(
                 now: now,
                 wineSessionLive: live,
-                steamReady: ready,
-                steamWindowVisible: windowVisible,
+                launcherReady: ready,
+                launcherWindowVisible: windowVisible,
                 gameRunning: running
             ),
             launchProgress(wineSessionLive: live)
@@ -218,6 +256,7 @@ public final class Runtime: @unchecked Sendable {
         environment["WINEDLLOVERRIDES"] =
             "winemenubuilder.exe=;winedbg.exe=d;mscoree,mshtml=;gameoverlayrenderer,gameoverlayrenderer64=;"
             + recipe.graphicsOverrides
+        environment.merge(recipe.launcherKind.engineEnvironment) { _, launcherValue in launcherValue }
         for (key, value) in recipe.extraEnvironment { environment[key] = value }
         return environment
     }
@@ -227,12 +266,12 @@ public final class Runtime: @unchecked Sendable {
         sink.say("Data location: \(root.path)")
         sink.say("Game runtime is ready.")
         sink.say(
-            "Runtime: \(files.fileExists(readyMarker) ? "ready" : "not installed") | Steam: \(files.fileExists(steamUI) ? "ready" : "not installed") | Sign-in: \(isSignedIn ? "yes" : "no") | \(recipe.title): \(game.map { files.fileExists($0) } == true ? "installed" : "not installed")"
+            "Runtime: \(files.fileExists(readyMarker) ? "ready" : "not installed") | \(launcherName): \(isLauncherClientInstalled ? "ready" : "not installed") | Sign-in: \(isSignedIn ? "yes" : "no") | \(recipe.title): \(game.map { files.fileExists($0) } == true ? "installed" : "not installed")"
         )
         if let game, files.fileExists(game) {
             do {
                 try validateGameInstallation()
-                sink.say("Game installation is complete. Steam manages game updates.")
+                sink.say("Game installation is complete. \(launcherName) manages game updates.")
             } catch let error as PortError {
                 sink.say("Game launch is blocked: \(error.message)")
             }
@@ -296,14 +335,31 @@ public final class Runtime: @unchecked Sendable {
         sink.say("The independent runtime is ready.")
     }
 
+    var launcherName: String { recipe.launcherKind.displayName }
+
     public func setup() throws {
         removeLegacyData()
         try prepare()
+        if recipe.launcherKind == .battleNet {
+            try ensureBattleNetClient()
+            try openBattleNet(gamePage: false)
+            sink.say("Battle.net is ready. Sign in in the Battle.net window.")
+            return
+        }
         try ensureSteamClient()
         sink.say("Steam is ready. Sign in in the Steam window.")
     }
 
+    /// Opens the launcher window of this recipe (Steam or Battle.net).
+    public func openLauncher() throws {
+        switch recipe.launcherKind {
+        case .steam: try openSteam(play: false)
+        case .battleNet: try openBattleNet(gamePage: false)
+        }
+    }
+
     public func logout() throws {
+        if recipe.launcherKind == .battleNet { return try logoutBattleNet() }
         if isSessionLive {
             try openSteam(play: false)
             sink.say("Steam is open. Sign out in the Steam window.")
@@ -314,6 +370,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func installGame() throws {
+        if recipe.launcherKind == .battleNet { return try installBattleNetGame() }
         if !files.fileExists(readyMarker) { try setup() }
         guard isSignedIn else {
             try openSteam(play: false)
@@ -329,6 +386,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func uninstallGame() throws {
+        if recipe.launcherKind == .battleNet { return try uninstallBattleNetGame() }
         if !files.fileExists(readyMarker) { try setup() }
         guard isSignedIn else {
             try openSteam(play: false)
@@ -342,6 +400,7 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func playGame() throws {
+        if recipe.launcherKind == .battleNet { return try playBattleNetGame() }
         try validateGameInstallation()
         try ensureSteamClient()
         let rendererFolder = try prepareRenderer()
@@ -531,7 +590,7 @@ public final class Runtime: @unchecked Sendable {
         }
         var arguments = [steam.path] + Self.wineSteamArguments(recipe.launchSteamArguments)
         if play {
-            arguments += ["-applaunch", recipe.steamID]
+            arguments += ["-applaunch", recipe.steamAppID]
         }
         try resetSteamHTMLCache()
         try ensureSteamWebHelperWrapper()
@@ -591,10 +650,7 @@ public final class Runtime: @unchecked Sendable {
     public func quarantineGameFiles() throws {
         let names = recipe.filesToQuarantine
         guard !names.isEmpty else { return }
-        let folder =
-            steamLibrary
-            .appendingPathComponent("steamapps/common")
-            .appendingPathComponent(recipe.installFolder)
+        let folder = gameFolder
         guard files.fileExists(folder) else { return }
         for name in names {
             let active = folder.appendingPathComponent(name)
@@ -610,10 +666,7 @@ public final class Runtime: @unchecked Sendable {
     public func seedGameFiles() throws {
         let entries = recipe.filesToSeed
         guard !entries.isEmpty else { return }
-        let folder =
-            steamLibrary
-            .appendingPathComponent("steamapps/common")
-            .appendingPathComponent(recipe.installFolder)
+        let folder = gameFolder
         guard files.fileExists(folder) else { return }
         for (relative, text) in entries.sorted(by: { $0.key < $1.key }) {
             let target = folder.appendingPathComponent(relative)
@@ -703,8 +756,8 @@ public final class Runtime: @unchecked Sendable {
         }
         let uri =
             install
-            ? "steam://install/\(recipe.steamID)"
-            : "steam://uninstall/\(recipe.steamID)"
+            ? "steam://install/\(recipe.steamAppID)"
+            : "steam://uninstall/\(recipe.steamAppID)"
         try commands.start(
             executable: wine,
             arguments: [steam.path, uri],
@@ -722,7 +775,7 @@ public final class Runtime: @unchecked Sendable {
             executable: wine,
             arguments: [steam.path] + Self.wineSteamArguments(recipe.launchSteamArguments) + [
                 "-applaunch",
-                recipe.steamID,
+                recipe.steamAppID,
             ],
             environment: wineEnvironment(hud: hud, advertiseAVX: false),
             workingDirectory: steam.deletingLastPathComponent(),
@@ -752,48 +805,33 @@ public final class Runtime: @unchecked Sendable {
     }
 
     private func waitForInstall() throws {
-        let deadline = Date().addingTimeInterval(installTimeout)
-        while Date() < deadline {
+        try waitForLauncherWork(timeout: installTimeout, work: "installing") {
             try? repairMisplacedInstall()
-            if (try? validateGameInstallation()) != nil { return }
-            if !isSessionLive {
-                // Steam often restarts when a download ends. Keep checking the library
-                // before treating a dead wineserver as a failed install.
-                if try waitThroughSessionDrop(
-                    until: deadline,
-                    done: {
-                        try? repairMisplacedInstall()
-                        return (try? validateGameInstallation()) != nil
-                    })
-                {
-                    return
-                }
-                if !isSessionLive {
-                    throw PortError("Steam closed before \(recipe.title) finished installing.")
-                }
-                continue
-            }
-            Thread.sleep(forTimeInterval: installPollInterval)
+            return (try? validateGameInstallation()) != nil
         }
-        throw PortError("Steam did not finish installing \(recipe.title).")
     }
 
     private func waitForUninstall() throws {
-        let deadline = Date().addingTimeInterval(uninstallTimeout)
+        try waitForLauncherWork(timeout: uninstallTimeout, work: "uninstalling") { isUninstallComplete() }
+    }
+
+    /// Polls `done` while the launcher installs or removes the game. `work` is "installing" or "uninstalling".
+    func waitForLauncherWork(timeout: TimeInterval, work: String, done: () -> Bool) throws {
+        let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if isUninstallComplete() { return }
+            if done() { return }
             if !isSessionLive {
-                if try waitThroughSessionDrop(until: deadline, done: { isUninstallComplete() }) {
-                    return
-                }
+                // Launchers often restart when a download ends. Keep checking the files
+                // before treating a dead wineserver as a failure.
+                if try waitThroughSessionDrop(until: deadline, done: done) { return }
                 if !isSessionLive {
-                    throw PortError("Steam closed before \(recipe.title) finished uninstalling.")
+                    throw PortError("\(launcherName) closed before \(recipe.title) finished \(work).")
                 }
                 continue
             }
             Thread.sleep(forTimeInterval: installPollInterval)
         }
-        throw PortError("Steam did not finish removing \(recipe.title).")
+        throw PortError("\(launcherName) did not finish \(work) \(recipe.title).")
     }
 
     private func isUninstallComplete() -> Bool {
@@ -818,7 +856,7 @@ public final class Runtime: @unchecked Sendable {
     public func stop() throws {
         guard files.fileExists(wineserver) else { return }
         endWineSession()
-        sink.say("Stopped Steam.")
+        sink.say("Stopped \(launcherName).")
     }
 
     private func endWineSession() {
@@ -846,7 +884,7 @@ public final class Runtime: @unchecked Sendable {
             timeout: 30,
             workingDirectory: nil
         )
-        sink.say("Stopped \(recipe.title). Steam is still open.")
+        sink.say("Stopped \(recipe.title). \(launcherName) is still open.")
     }
 
     /// Stop the game if it is running; otherwise stop the Steam/Wine session.
@@ -860,6 +898,9 @@ public final class Runtime: @unchecked Sendable {
 
     public func validateGameInstallation() throws {
         try recipe.validate()
+        if recipe.launcherKind == .battleNet, !isGameInstalled {
+            throw PortError("Install \(recipe.title) in the Battle.net window, then choose Play.")
+        }
         guard isGameInstalled else {
             if game.map({ files.fileExists($0) }) != true {
                 throw PortError("Install \(recipe.title) in this Steam client's default library, then choose Play.")
@@ -873,21 +914,12 @@ public final class Runtime: @unchecked Sendable {
 
     public func requireIdle() throws {
         if isSessionLive {
-            throw PortError("Save and close \(recipe.title) and Steam before you install or repair this environment.")
-        }
-    }
-
-    public static func requireSingleSession(active: Runtime, others: [Runtime]) throws {
-        for other in others where other.root != active.root && other.isSessionLive {
-            throw PortError("Another game's Steam session is open: \(other.recipe.title). Stop it before you switch games.")
+            throw PortError("Save and close \(recipe.title) and \(launcherName) before you install or repair this environment.")
         }
     }
 
     private func removeInstalledGameFiles() throws {
-        let common =
-            steamLibrary
-            .appendingPathComponent("steamapps/common")
-            .appendingPathComponent(recipe.installFolder)
+        let common = gameFolder
         if files.fileExists(common) { try files.removeItem(common) }
         for candidate in manifestCandidates where files.fileExists(candidate) {
             try files.removeItem(candidate)
@@ -898,10 +930,7 @@ public final class Runtime: @unchecked Sendable {
         guard let expected = game, !files.fileExists(expected) else { return }
         let misplaced = steamLibrary.appendingPathComponent(recipe.gameRelativePath)
         guard files.fileExists(misplaced) else { return }
-        let destination =
-            steamLibrary
-            .appendingPathComponent("steamapps/common")
-            .appendingPathComponent(recipe.installFolder)
+        let destination = gameFolder
         try files.createDirectory(destination)
         for item in (try files.contentsOfDirectory(steamLibrary)) {
             if item.lastPathComponent.lowercased() == "steamapps" { continue }
@@ -929,7 +958,7 @@ public final class Runtime: @unchecked Sendable {
         )
     }
 
-    private func downloadPinnedFile(name: String, url: String, expected: String, progress: String, mismatch: String) throws -> URL {
+    func downloadPinnedFile(name: String, url: String, expected: String, progress: String, mismatch: String) throws -> URL {
         let destination = downloads.appendingPathComponent(name)
         if files.fileExists(destination), let data = try? files.read(destination), SteamInstaller.digest(of: data) == expected {
             return destination
@@ -1068,10 +1097,10 @@ public struct Library: @unchecked Sendable {
     public let home: URL
     public let wine: URL
     public let wineserver: URL
-    private let files: FileSystem
-    private let commands: CommandRunning
-    private let sink: StatusSink
-    private let frontmost: FrontmostActivating
+    let files: FileSystem
+    let commands: CommandRunning
+    let sink: StatusSink
+    let frontmost: FrontmostActivating
 
     public init(
         recipes: [Recipe],
@@ -1110,10 +1139,20 @@ public struct Library: @unchecked Sendable {
     }
 
     public func stopAllSessions() {
-        guard let recipe = recipes.first else { return }
-        let selected = runtime(for: recipe)
-        guard files.fileExists(selected.prefix) else { return }
-        try? selected.stop()
+        for launcher in Launcher.allCases {
+            guard let recipe = recipes.first(where: { $0.launcherKind == launcher }) else { continue }
+            stopSession(of: runtime(for: recipe))
+        }
+    }
+
+    /// Stops the launcher of this game and its games. The other launcher keeps running.
+    public func stopSession(gameID: String) throws {
+        stopSession(of: runtime(for: try recipe(id: gameID)))
+    }
+
+    private func stopSession(of launcherRuntime: Runtime) {
+        guard files.fileExists(launcherRuntime.prefix) else { return }
+        try? launcherRuntime.stop()
     }
 
     public func removeLegacyData() {
@@ -1121,12 +1160,11 @@ public struct Library: @unchecked Sendable {
     }
 
     public func perform(_ action: LibraryAction, gameID: String) throws {
-        let blockOtherSessions = ![.check, .stop, .logout, .acceptAppleLicense].contains(action)
-        try performLocked(gameID: gameID, blockOtherSessions: blockOtherSessions) { selected in
+        try performLocked(gameID: gameID) { selected in
             switch action {
             case .check: try selected.check()
             case .setup: try selected.setup()
-            case .steam: try selected.openSteam(play: false)
+            case .steam: try selected.openLauncher()
             case .install: try selected.installGame()
             case .uninstall: try selected.uninstallGame()
             case .play: try selected.playGame()
@@ -1137,15 +1175,12 @@ public struct Library: @unchecked Sendable {
         }
     }
 
-    private func performLocked(gameID: String, blockOtherSessions: Bool, work: (Runtime) throws -> Void) throws {
+    private func performLocked(gameID: String, work: (Runtime) throws -> Void) throws {
         let recipe = try recipe(id: gameID)
         let selected = runtime(for: recipe)
         try files.createDirectory(selected.root)
-        let lock = try SessionLock(root: selected.root)
+        let lock = try SessionLock(root: selected.root, launcher: recipe.launcherKind)
         defer { withExtendedLifetime(lock) {} }
-        if blockOtherSessions {
-            try Runtime.requireSingleSession(active: selected, others: recipes.map { runtime(for: $0) })
-        }
         try work(selected)
     }
 
@@ -1168,7 +1203,7 @@ extension SteamClientInspecting {
 }
 
 public struct ProcessSteamClientInspector: SteamClientInspecting {
-    private let commands: CommandRunning
+    let commands: CommandRunning
     private let timeout: TimeInterval
 
     public init(commands: CommandRunning = ProcessCommandRunner(), timeout: TimeInterval = 0.5) {
@@ -1232,6 +1267,19 @@ public enum WineSessionProcess {
     }
 }
 
+public enum WineServerSocket {
+    public static let defaultDirectory = URL(fileURLWithPath: "/tmp/.wine-\(getuid())", isDirectory: true)
+
+    /// Wine names the server folder after the device and inode of the prefix. The socket exists while that wineserver runs.
+    public static func url(prefix: URL, in directory: URL) -> URL? {
+        var status = stat()
+        guard stat(prefix.path, &status) == 0 else { return nil }
+        let device = String(UInt64(status.st_dev), radix: 16)
+        let inode = String(UInt64(status.st_ino), radix: 16)
+        return directory.appendingPathComponent("server-\(device)-\(inode)/socket")
+    }
+}
+
 public enum SteamClientProcess {
     public static func isRunning(in processList: String, prefix: URL) -> Bool {
         let prefixPath = prefix.path
@@ -1257,12 +1305,15 @@ public enum SteamClientProcess {
         let inSteamFolder =
             lower.contains("/steam/steam.exe") || lower.contains("\\steam\\steam.exe")
         guard inSteamFolder else { return false }
-        if lower.hasPrefix("/bin/zsh") || lower.hasPrefix("/bin/bash") || lower.hasPrefix("zsh")
-            || lower.hasPrefix("bash") || lower.contains("zsh -c") || lower.contains("bash -c")
-            || lower.contains("steampath=")
-        {
-            return false
-        }
-        return true
+        return !ShellCommand.isShell(lower) && !lower.contains("steampath=")
+    }
+}
+
+public enum ShellCommand {
+    /// A shell line that only names a launcher (for example a script that greps for it) is not the launcher.
+    public static func isShell(_ lowercasedCommand: String) -> Bool {
+        lowercasedCommand.hasPrefix("/bin/zsh") || lowercasedCommand.hasPrefix("/bin/bash")
+            || lowercasedCommand.hasPrefix("zsh") || lowercasedCommand.hasPrefix("bash")
+            || lowercasedCommand.contains("zsh -c") || lowercasedCommand.contains("bash -c")
     }
 }

@@ -18,24 +18,24 @@ public struct LibrarySnapshot: Equatable, Sendable {
     public var downloadFraction: Double?
     public var wineSessionLive: Bool
     /// Steam.exe (and UI helper) are up — stronger than wineserver alone.
-    public var steamReady: Bool
+    public var launcherReady: Bool
     /// A Wine/Steam window is on screen (not only processes).
-    public var steamWindowVisible: Bool
+    public var launcherWindowVisible: Bool
     public var gameRunning: Bool
 
     public init(
         stage: GameStage,
         downloadFraction: Double? = nil,
         wineSessionLive: Bool = false,
-        steamReady: Bool = false,
-        steamWindowVisible: Bool = false,
+        launcherReady: Bool = false,
+        launcherWindowVisible: Bool = false,
         gameRunning: Bool = false
     ) {
         self.stage = stage
         self.downloadFraction = downloadFraction
         self.wineSessionLive = wineSessionLive
-        self.steamReady = steamReady
-        self.steamWindowVisible = steamWindowVisible
+        self.launcherReady = launcherReady
+        self.launcherWindowVisible = launcherWindowVisible
         self.gameRunning = gameRunning
     }
 
@@ -44,7 +44,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
     public var isInstalled: Bool { stage == .ready || stage == .running }
     public var isRunning: Bool { stage == .running || gameRunning }
     /// Processes up and a Steam/Wine window is visible.
-    public var steamIsUp: Bool { steamReady && steamWindowVisible }
+    public var launcherIsUp: Bool { launcherReady && launcherWindowVisible }
 
     public static func display(_ snapshot: LibrarySnapshot, activity: String, busy: Bool) -> LibrarySnapshot {
         guard busy else { return snapshot }
@@ -56,8 +56,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .downloading,
                 downloadFraction: snapshot.downloadFraction,
                 wineSessionLive: snapshot.wineSessionLive,
-                steamReady: snapshot.steamReady,
-                steamWindowVisible: snapshot.steamWindowVisible,
+                launcherReady: snapshot.launcherReady,
+                launcherWindowVisible: snapshot.launcherWindowVisible,
                 gameRunning: false
             )
         }
@@ -65,8 +65,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return LibrarySnapshot(
                 stage: snapshot.isInstalled || snapshot.stage == .running ? .ready : snapshot.stage,
                 wineSessionLive: snapshot.wineSessionLive,
-                steamReady: snapshot.steamReady,
-                steamWindowVisible: snapshot.steamWindowVisible,
+                launcherReady: snapshot.launcherReady,
+                launcherWindowVisible: snapshot.launcherWindowVisible,
                 gameRunning: false
             )
         }
@@ -79,11 +79,13 @@ public struct LibrarySnapshot: Equatable, Sendable {
         signedIn: Bool,
         gameExecutable: URL?,
         manifest: URL?,
+        /// Launchers without a Steam manifest give the install state here.
+        installComplete: Bool? = nil,
         steamID: String,
         installFolder: String,
         wineSessionLive: Bool,
-        steamReady: Bool = false,
-        steamWindowVisible: Bool = false,
+        launcherReady: Bool = false,
+        launcherWindowVisible: Bool = false,
         gameRunning: Bool = false,
         now: Date = Date(),
         files: FileSystem = FoundationFileSystem()
@@ -92,12 +94,13 @@ public struct LibrarySnapshot: Equatable, Sendable {
         let flags = Int(SteamManifest.value("StateFlags", in: text) ?? "0") ?? 0
         let downloaded = Double(SteamManifest.value("BytesDownloaded", in: text) ?? "0") ?? 0
         let total = Double(SteamManifest.value("BytesToDownload", in: text) ?? "0") ?? 0
-        if flags == 4, let gameExecutable, files.fileExists(gameExecutable) {
+        let gameFileExists = gameExecutable.map(files.fileExists) ?? false
+        if installComplete ?? (flags == 4 && gameFileExists) {
             return LibrarySnapshot(
                 stage: gameRunning ? .running : .ready,
                 wineSessionLive: wineSessionLive,
-                steamReady: steamReady,
-                steamWindowVisible: steamWindowVisible,
+                launcherReady: launcherReady,
+                launcherWindowVisible: launcherWindowVisible,
                 gameRunning: gameRunning
             )
         }
@@ -105,8 +108,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return LibrarySnapshot(
                 stage: .setup,
                 wineSessionLive: wineSessionLive,
-                steamReady: steamReady,
-                steamWindowVisible: steamWindowVisible
+                launcherReady: launcherReady,
+                launcherWindowVisible: launcherWindowVisible
             )
         }
         if flags != 4 && total > 0 {
@@ -120,23 +123,23 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .downloading,
                 downloadFraction: fresh && valid ? downloaded / total : nil,
                 wineSessionLive: wineSessionLive,
-                steamReady: steamReady,
-                steamWindowVisible: steamWindowVisible
+                launcherReady: launcherReady,
+                launcherWindowVisible: launcherWindowVisible
             )
         }
         if signedIn {
             return LibrarySnapshot(
                 stage: .install,
                 wineSessionLive: wineSessionLive,
-                steamReady: steamReady,
-                steamWindowVisible: steamWindowVisible
+                launcherReady: launcherReady,
+                launcherWindowVisible: launcherWindowVisible
             )
         }
         return LibrarySnapshot(
             stage: .signIn,
             wineSessionLive: wineSessionLive,
-            steamReady: steamReady,
-            steamWindowVisible: steamWindowVisible
+            launcherReady: launcherReady,
+            launcherWindowVisible: launcherWindowVisible
         )
     }
 }

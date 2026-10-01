@@ -1,9 +1,44 @@
 import Foundation
 
+public enum Launcher: String, Codable, CaseIterable, Sendable {
+    case steam
+    case battleNet = "battlenet"
+
+    public var displayName: String {
+        switch self {
+        case .steam: return "Steam"
+        case .battleNet: return "Battle.net"
+        }
+    }
+
+    /// Steam keeps the file names from before other launchers.
+    private var fileNameSuffix: String { self == .steam ? "" : "-\(rawValue)" }
+
+    /// Each launcher has its own Wine prefix, so a problem in one cannot break the other.
+    public var prefixFolderName: String { "prefix" + fileNameSuffix }
+    public var readyMarkerName: String { "runtime-ready" + fileNameSuffix }
+    public var operationLockName: String { "operation\(fileNameSuffix).lock" }
+
+    /// Engine switches for every process in the prefix of this launcher.
+    public var engineEnvironment: [String: String] {
+        switch self {
+        case .steam: return [:]
+        // Battle.net's CEF 108 page renderers stop at V8's CHECK(old protection == PAGE_READWRITE) when they make
+        // their flags read-only. Without this, Wine reports PAGE_WRITECOPY for DLL data pages that were written.
+        case .battleNet: return ["WINE_SIMULATE_WRITECOPY": "1"]
+        }
+    }
+}
+
 public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let title: String
-    public let steamID: String
+    /// Steam app number. Required for Steam recipes.
+    public let steamID: String?
+    /// `steam` (default) or `battlenet`.
+    public var launcher: Launcher?
+    /// Battle.net product code for `--exec="launch <code>"` (for example `OSI`). Required for Battle.net recipes.
+    public var battleNetProductCode: String?
     public let installFolder: String
     public let executable: String
     public var executableRelativePath: String?
@@ -29,7 +64,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public init(
         id: String,
         title: String,
-        steamID: String,
+        steamID: String?,
         installFolder: String,
         executable: String,
         executableRelativePath: String? = nil,
@@ -64,6 +99,8 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         self.wineVirtualDesktop = wineVirtualDesktop
     }
 
+    public var steamAppID: String { steamID ?? "" }
+    public var launcherKind: Launcher { launcher ?? .steam }
     public var windowsVersion: String { wineWindowsVersion ?? "win10" }
     public var launchSteamArguments: [String] { steamArguments ?? Runtime.requiredSteamArguments }
     public var extraEnvironment: [String: String] { environment ?? [:] }
@@ -120,8 +157,17 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
             throw PortError("Recipe id must use ASCII letters, numbers, or hyphens.")
         }
         guard !title.isEmpty else { throw PortError("Recipe \(id) needs a title.") }
-        guard !steamID.isEmpty, steamID.allSatisfy({ $0.isASCII && $0.isNumber }) else {
-            throw PortError("Recipe \(id) steamID must be digits only.")
+        switch launcherKind {
+        case .steam:
+            guard !steamAppID.isEmpty, steamAppID.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+                throw PortError("Recipe \(id) steamID must be digits only.")
+            }
+        case .battleNet:
+            guard let battleNetProductCode, !battleNetProductCode.isEmpty,
+                battleNetProductCode.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
+            else {
+                throw PortError("Recipe \(id) battleNetProductCode must be ASCII letters or numbers.")
+            }
         }
         try Self.validateName(installFolder, field: "installFolder", id: id)
         try Self.validateName(executable, field: "executable", id: id)

@@ -6,6 +6,8 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
     var live = false
     /// Path included in fake `ps` output when `live` is true (session detection).
     var wineserverPath = ""
+    /// More fake `ps` lines when `live` is true (for example a process in another prefix).
+    var liveProcessLines: [String] = []
     var started: [(URL, [String])] = []
     var files: FileSystem = FoundationFileSystem()
     var installerBytes = Data("unused".utf8)
@@ -15,6 +17,8 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
     var ran: [(name: String, arguments: [String], prefix: String?)] = []
     var finishSteamInstallOnStart = false
     var finishSteamUninstallOnStart = false
+    var finishBattleNetInstallOnStart = false
+    var finishBattleNetUninstallOnStart = false
     var installSeed = InstallSeed.standard
     var steamClient: FakeSteamClient?
 
@@ -34,7 +38,7 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
         ran.append((executable.lastPathComponent, arguments, environment["WINEPREFIX"]))
         if executable.path == "/bin/ps" || executable.lastPathComponent == "ps" {
             if live, !wineserverPath.isEmpty {
-                return "\(wineserverPath)\n/bin/ps\n"
+                return ([wineserverPath] + liveProcessLines + ["/bin/ps"]).joined(separator: "\n") + "\n"
             }
             return "/bin/ps\n"
         }
@@ -107,10 +111,32 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
         if finishSteamUninstallOnStart, arguments.contains(where: { $0.hasPrefix("steam://uninstall/") }), let prefix = environment["WINEPREFIX"] {
             try removeInstalledGame(prefix: URL(fileURLWithPath: prefix))
         }
+        if let prefix = environment["WINEPREFIX"].map({ URL(fileURLWithPath: $0) }) {
+            try fakeBattleNet(arguments: arguments, prefix: prefix)
+        }
         if arguments.contains(where: { $0.lowercased().hasSuffix("steam.exe") })
             || arguments.contains("explorer")
         {
             steamClient?.running = true
+        }
+    }
+
+    private func fakeBattleNet(arguments: [String], prefix: URL) throws {
+        let programFiles = prefix.appendingPathComponent("drive_c/Program Files (x86)")
+        if arguments.first?.hasSuffix("Battle.net-Setup.exe") == true {
+            let client = programFiles.appendingPathComponent("Battle.net/Battle.net.exe")
+            try FileManager.default.createDirectory(at: client.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("battle.net".utf8).write(to: client)
+        }
+        guard arguments.contains(where: { $0.hasPrefix("--exec=launch ") }) else { return }
+        let gameFolder = programFiles.appendingPathComponent("Diablo II Resurrected")
+        if finishBattleNetInstallOnStart {
+            try FileManager.default.createDirectory(at: gameFolder, withIntermediateDirectories: true)
+            try Data("game".utf8).write(to: gameFolder.appendingPathComponent("D2R.exe"))
+            try Data("build".utf8).write(to: gameFolder.appendingPathComponent(".build.info"))
+        }
+        if finishBattleNetUninstallOnStart {
+            try? FileManager.default.removeItem(at: gameFolder)
         }
     }
 
@@ -1215,23 +1241,6 @@ final class RuntimeTests: XCTestCase {
         )
     }
 
-    func testSingleSessionLock() throws {
-        let env = try makeEnvironment()
-        defer { try? FileManager.default.removeItem(at: env.root) }
-        let otherRoot = env.root.deletingLastPathComponent().appendingPathComponent("other")
-        try FileManager.default.createDirectory(at: otherRoot.appendingPathComponent("prefix"), withIntermediateDirectories: true)
-        let other = Runtime(
-            recipe: Recipe(id: "other", title: "Other", steamID: "1", installFolder: "Other", executable: "o.exe"),
-            root: otherRoot,
-            wine: env.runtime.wine,
-            wineserver: env.runtime.wineserver,
-            commands: env.commands,
-            sink: env.sink
-        )
-        env.commands.live = true
-        XCTAssertThrowsError(try Runtime.requireSingleSession(active: env.runtime, others: [other]))
-    }
-
     func testStopAllSessionsKillsTheSharedPrefix() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("cellar-stop-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: home) }
@@ -1279,7 +1288,7 @@ final class RuntimeTests: XCTestCase {
         func mainDisplaySize() -> (width: Int, height: Int)? { (width, height) }
     }
 
-    private struct Environment {
+    struct Environment {
         var root: URL
         var runtime: Runtime
         var commands: FakeCommands
@@ -1288,7 +1297,7 @@ final class RuntimeTests: XCTestCase {
         var steamClient: FakeSteamClient
     }
 
-    private func writeSignedIn(_ env: Environment) throws {
+    func writeSignedIn(_ env: Environment) throws {
         let config = env.runtime.steamLibrary.appendingPathComponent("config")
         try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
         try """
@@ -1304,7 +1313,7 @@ final class RuntimeTests: XCTestCase {
         try env.runtime.installGame()
     }
 
-    private func makeEnvironment(
+    func makeEnvironment(
         recipe: Recipe = Recipe(
             id: "spacewar",
             title: "Spacewar",

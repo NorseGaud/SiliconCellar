@@ -1,0 +1,12 @@
+{
+  "id": "d2r",
+  "title": "Diablo II: Resurrected",
+  "launcher": "battlenet",
+  "battleNetProductCode": "OSI",
+  "installFolder": "Diablo II Resurrected",
+  "executable": "D2R.exe",
+  "wineWindowsVersion": "win10",
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
+}
