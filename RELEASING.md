@@ -2,7 +2,25 @@
 
 Bare `make` (the `all` target) runs lint, tests, a debug build, a **forced** Engine refresh (`make engine` downloads the pinned NorseGaud/wine Engine release), then a Developer ID–signed, notarized, stapled DMG. CI stays unsigned (`make ci` only) and does not download the Engine.
 
-Pin lives in `engine/manifest.json` (NorseGaud/wine release tag, URL + SHA-256). `scripts/build-wine-engine.sh` first moves the pin to the latest NorseGaud/wine release if the two differ, so commit `engine/manifest.json` after a new Engine release (`make release` stops on uncommitted changes). `make release` asks before it packages when that release differs from the local pin (or when GitHub cannot be read). Answer yes to package the local pin. Otherwise stop and run `make engine`, then commit `engine/manifest.json`. `make engine` sets `FORCE_ENGINE_BUILD=1` so release always refreshes from that pin (archive cache under `.build/engine-cache/` is reused when the hash matches).
+Pin lives in `engine/manifest.json` (NorseGaud/wine release tag, URL + SHA-256). `scripts/build-wine-engine.sh` first moves the pin to the latest NorseGaud/wine release if the two differ. `make release` asks before it packages when that release differs from the local pin (or when GitHub cannot be read). Answer yes to package the local pin. Otherwise stop and run the steps below. `make engine` sets `FORCE_ENGINE_BUILD=1` so a release always refreshes from that pin (archive cache under `.build/engine-cache/` is reused when the hash matches).
+
+## When Wine changes
+
+Edit Wine in the `wine/` submodule (branch `siliconcellar`). Commit those edits in `wine/` yourself. A push of that branch builds the Engine, but it does **not** publish a release. Only an `sc-*` tag does.
+
+`make engine-tag` does steps 1 to 3:
+
+1. Push the `wine` submodule's `siliconcellar` branch.
+2. Create the next tag `sc-<CrossOver version>-<n>` (for example `sc-26.3.0-5`) and push it. This starts a new Engine build. It does not reuse the branch build.
+3. Commit that submodule commit in Silicon Cellar and push it.
+
+The tag build takes about 1 to 2 hours. Watch [NorseGaud/wine actions](https://github.com/NorseGaud/wine/actions) until the run for that tag is green. A green run on the `siliconcellar` branch does not publish the release.
+
+When the release exists, do steps 4 to 6:
+
+4. `make engine` — write the new tag, URL, and SHA-256 into `engine/manifest.json` and download the Engine.
+5. `make engine-pin` — commit and push `engine/manifest.json`.
+6. `make release` — build the signed DMG and upload the draft GitHub release.
 
 ## Version
 

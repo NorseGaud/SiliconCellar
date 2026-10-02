@@ -72,7 +72,7 @@ Pin: `engine/manifest.json` (tag, URL and SHA-256 for `siliconcellar-wine-*-x86_
 
 Each run asks the GitHub API for the latest NorseGaud/wine release. If its tag differs from the pin, the script writes the new tag, URL and SHA-256 (from the release asset digest) into `engine/manifest.json`, then downloads and checks the archive. Commit the changed `engine/manifest.json`. If GitHub is not available, the script uses the current pin.
 
-To compile the same tag yourself, run `make engine-source`. It clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs `build/build-engine.sh` from that repo. That takes hours and needs x86_64 Homebrew in `/usr/local` (see `build/README.md` in the Wine repo). To change the Wine fixes, work in the Wine repo, push a new `sc-*` tag, and publish its release. The next `make engine`, `make app` or `make dev` pins it.
+To compile the submodule yourself, run `make engine-source`. It runs `wine/build/build-engine.sh`. That takes hours and needs x86_64 Homebrew in `/usr/local` (see `wine/build/README.md`). To change the Wine fixes, edit the `wine/` submodule, commit there, then follow [When Wine changes](RELEASING.md#when-wine-changes): `make engine-tag`, wait for the tag build, then `make engine`, `make engine-pin`, and `make release`.
 
 Then package an unsigned app for local play:
 
@@ -104,6 +104,7 @@ For unsigned packaging only, use `make app` or `make ci`.
 | `Sources/siliconcellar/` | CLI |
 | `Tests/SiliconCellarCoreTests/` | Unit tests |
 | `Recipes/` | Bundled game recipes (JSON) |
+| `wine/` | NorseGaud/wine submodule (SSH). Engine source you edit |
 | `engine/manifest.json` | Pinned NorseGaud/wine Engine release |
 | `scripts/` | Package, Engine fetch, DMG, `dev.sh` |
 

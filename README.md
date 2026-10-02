@@ -146,7 +146,7 @@ The tool looks for Wine in this order:
 2. `SiliconCellar.app/Contents/Resources/Engine/bin/wine` (bundled)
 3. `~/Library/Application Support/SiliconCellar/Wine/Wine Staging.app/.../wine` (one-release fallback)
 
-Pin and fetch script: `engine/manifest.json` and `scripts/build-wine-engine.sh` (release tarball). To compile the same tag from source, run `make engine-source`. That clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs its `build/build-engine.sh` (hours; needs x86_64 Homebrew in `/usr/local`, see `build/README.md` there).
+Pin and fetch script: `engine/manifest.json` and `scripts/build-wine-engine.sh` (release tarball). Wine source that you edit is the `wine/` submodule. To publish a new Engine tag, see [When Wine changes](RELEASING.md#when-wine-changes). To compile the submodule from source, run `make engine-source`. That runs `wine/build/build-engine.sh` (hours; needs x86_64 Homebrew in `/usr/local`, see `wine/build/README.md`).
 
 The Engine records its ID in `Engine/.siliconcellar-engine-version`. When the ID changes (for example after an app update), the next Steam launch runs `wineboot --update` in the shared prefix. Steam and the games stay.
 

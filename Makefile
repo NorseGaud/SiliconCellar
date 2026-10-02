@@ -1,4 +1,4 @@
-.PHONY: all build test app engine engine-source dev clean lint ci sign create-dmg notarize dist release
+.PHONY: all build test app engine engine-source engine-tag engine-pin dev clean lint ci sign create-dmg notarize dist release
 
 # Developer ID release signing (non-CI). Credentials stay in the login keychain.
 CODESIGN_IDENTITY?=Developer ID Application: ONLYHUMN LLC (4JD8RUCQ2W)
@@ -28,9 +28,17 @@ test:
 engine:
 	FORCE_ENGINE_BUILD=1 ./scripts/build-wine-engine.sh
 
-# Compile the same pinned Engine from source into .build/engine (hours; x86_64 Homebrew needed).
+# Compile the wine/ submodule into .build/engine (hours; x86_64 Homebrew needed).
 engine-source:
 	./scripts/build-engine-source.sh
+
+# Push the wine submodule, the next sc-* tag, and the submodule pointer. See RELEASING.md.
+engine-tag:
+	./scripts/tag-wine-engine.sh
+
+# Commit and push engine/manifest.json after make engine.
+engine-pin:
+	./scripts/pin-wine-engine.sh
 
 app:
 	VERSION="$(version)" BUILD_NUMBER="$(build_number)" ./scripts/package-app.sh
@@ -45,6 +53,8 @@ lint:
 	sh -n scripts/package-app.sh
 	sh -n scripts/build-wine-engine.sh
 	sh -n scripts/build-engine-source.sh
+	sh -n scripts/tag-wine-engine.sh
+	sh -n scripts/pin-wine-engine.sh
 	sh -n scripts/sign-app.sh
 	sh -n scripts/make-dmg.sh
 	python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/slim-engine.py").read_text())'
