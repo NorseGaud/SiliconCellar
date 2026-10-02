@@ -164,12 +164,10 @@ public struct ProcessCommandRunner: CommandRunning {
         }
 
         handle.readabilityHandler = { file in
-            let data = file.availableData
-            if data.isEmpty {
-                file.readabilityHandler = nil
-                return
-            }
-            record(data)
+            // availableData can block inside this handler. The pipe then fills and the child
+            // never exits. A non-blocking read takes only the bytes that are already there.
+            let data = Self.readAvailableWithoutWaiting(file)
+            if !data.isEmpty { record(data) }
         }
 
         try process.run()
