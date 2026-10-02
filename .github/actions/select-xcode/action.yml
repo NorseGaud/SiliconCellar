@@ -1,0 +1,16 @@
+name: Select Xcode
+description: Select the Xcode version that CI builds with and show the toolchain.
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+      with:
+        xcode-version: "26.6"
+
+    - name: Show toolchain
+      shell: bash
+      run: |
+        swift --version
+        xcodebuild -version
