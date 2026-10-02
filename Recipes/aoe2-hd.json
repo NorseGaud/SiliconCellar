@@ -1,0 +1,25 @@
+{
+  "id": "aoe2-hd",
+  "title": "Age of Empires II (2013)",
+  "steamID": "221380",
+  "launcher": "steam",
+  "installFolder": "Age2HD",
+  "executable": "AoK HD.exe",
+  "directLaunch": true,
+  "executableArguments": [
+    "SKIPINTRO"
+  ],
+  "wineWindowsVersion": "win10",
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {
+    "SteamAppId": "221380",
+    "SteamGameId": "221380"
+  },
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "seedFiles": {
+    "steam_appid.txt": "221380\n"
+  },
+  "renderer": "wine"
+}

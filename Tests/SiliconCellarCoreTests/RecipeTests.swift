@@ -168,7 +168,7 @@ final class RecipeStoreTests: XCTestCase {
             "spacewar", "aoe4", "aoe2", "aoe3", "coh3", "cs2", "zero-hour", "red-alert2",
             "overwatch", "diablo4", "poe2", "hogwarts-legacy", "skyrim-se",
             "san-andreas-de", "heroes3", "elden-ring", "aom-retold", "mdk", "mdk2",
-            "witcher3", "d2r", "rdr2",
+            "witcher3", "d2r", "rdr2", "aoe2-hd",
         ]
         XCTAssertEqual(ids, Set(expected))
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.steamID, "38450")
@@ -200,6 +200,9 @@ final class RecipeStoreTests: XCTestCase {
             recipes.first { $0.id == "san-andreas-de" }?.extraEnvironment["SILICONCELLAR_CHILD_ARGS"],
             "SocialClubHelper.exe=--in-process-gpu --use-gl=angle --use-angle=swiftshader"
         )
+        XCTAssertEqual(recipes.first { $0.id == "aoe2-hd" }?.executable, "AoK HD.exe")
+        XCTAssertEqual(recipes.first { $0.id == "aoe2-hd" }?.launchesDirectly, true)
+        XCTAssertEqual(recipes.first { $0.id == "aoe2-hd" }?.launchExecutableArguments, ["SKIPINTRO"])
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.steamID, "38460")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.executable, "mdk2Main.exe")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.launchesDirectly, true)

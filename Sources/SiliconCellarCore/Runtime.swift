@@ -645,14 +645,15 @@ public final class Runtime: @unchecked Sendable {
         guard let game else {
             throw PortError("Install \(recipe.title) before you play.")
         }
+        let program = [game.path] + recipe.launchExecutableArguments
         let arguments: [String]
         if recipe.virtualDesktopSize != nil {
             let desktop = try resolvedVirtualDesktop()
             // explorer /desktop keeps old Glide/D3D titles drawing on macOS Wine.
-            arguments = ["explorer", "/desktop=\(recipe.id),\(desktop)", game.path]
+            arguments = ["explorer", "/desktop=\(recipe.id),\(desktop)"] + program
             sink.say("Starting \(recipe.title) in a \(desktop) Wine desktop.")
         } else {
-            arguments = [game.path]
+            arguments = program
         }
         try commands.start(
             executable: wine,

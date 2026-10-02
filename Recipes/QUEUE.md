@@ -4,7 +4,7 @@ These 78 games are in the NorseGaud Steam account. They do not have a recipe and
 
 For each game, make `Recipes/<id>.json` (see [Add a game](../README.md#add-a-game)), test it, and then change `[ ]` to `[x]`. The first executable is the default Steam launch option. The other executables are alternative launch options.
 
-- [ ] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`
+- [x] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`
 - [ ] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`
 - [ ] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`
 - [ ] **BRINK**: Steam ID `22350`, install folder `BRINK`, executable `brink.exe`

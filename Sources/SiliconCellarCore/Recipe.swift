@@ -54,6 +54,8 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var profileFolders: [String]?
     /// When true, start Steam, then run `executable` through Wine instead of `-applaunch`.
     public var directLaunch: Bool?
+    /// Arguments for a direct launch, after the executable (for example `SKIPINTRO`).
+    public var executableArguments: [String]?
     /// Wine `Direct3D` renderer for this executable (`gl`, `vulkan`, `gdi`, or `no3d`).
     public var wineD3DRenderer: String?
     /// Wine virtual desktop for direct launch: `WIDTHxHEIGHT`, or `display` to match the Mac screen.
@@ -81,6 +83,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         quarantineFiles: [String]? = nil,
         seedFiles: [String: String]? = nil,
         directLaunch: Bool? = nil,
+        executableArguments: [String]? = nil,
         wineD3DRenderer: String? = nil,
         wineVirtualDesktop: String? = nil
     ) {
@@ -97,6 +100,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         self.quarantineFiles = quarantineFiles
         self.seedFiles = seedFiles
         self.directLaunch = directLaunch
+        self.executableArguments = executableArguments
         self.wineD3DRenderer = wineD3DRenderer
         self.wineVirtualDesktop = wineVirtualDesktop
     }
@@ -122,6 +126,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public var extraEnvironment: [String: String] { environment ?? [:] }
     public var graphicsOverrides: String { dllOverrides ?? "dxgi,d3d11,d3d12=n,b" }
     public var launchesDirectly: Bool { directLaunch == true }
+    public var launchExecutableArguments: [String] { executableArguments ?? [] }
     public var filesToQuarantine: [String] { quarantineFiles ?? [] }
     public var filesToSeed: [String: String] { seedFiles ?? [:] }
     public var userProfileFolders: [String] { profileFolders ?? [] }
@@ -193,6 +198,11 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         }
         for name in filesToQuarantine {
             try Self.validateName(name, field: "quarantineFiles", id: id)
+        }
+        for argument in launchExecutableArguments {
+            guard !argument.isEmpty, !argument.contains("\n"), !argument.contains("\0") else {
+                throw PortError("Recipe \(id) executableArguments has an empty value.")
+            }
         }
         for path in filesToSeed.keys {
             try Self.validateRelativePath(path, id: id)
