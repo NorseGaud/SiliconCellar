@@ -181,9 +181,7 @@ The toolkit does not send analytics.
 
 ## Roadmap
 
-- [ ] **Battle.net live test.** Confirm the sign-in mark (`Client.SavedAccountNames`) and the install mark (`.build.info` in the game folder) with a Battle.net account.
-- [ ] **Age of Empires II.** Add the DLC-query cache. This is an Engine overlay (`wine11-aoe2-selection-v5`). A game update can break it.
-- [ ] **Red Dead Redemption 2 Engine.** Add the `wine11-rdr2-rockstar-v1` Engine. The recipe already uses `d3dmetal` and installs the Rockstar Games Launcher.
+- [ ] **Recipe queue.** Add a recipe for each game in [`Recipes/QUEUE.md`](Recipes/QUEUE.md). Mark the line `[x]` after the recipe is tested.
 
 ## Support
 
