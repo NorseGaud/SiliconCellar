@@ -1,0 +1,4 @@
+[submodule "wine"]
+	path = wine
+	url = git@github.com:NorseGaud/wine.git
+	branch = siliconcellar
