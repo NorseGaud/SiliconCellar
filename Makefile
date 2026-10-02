@@ -52,6 +52,7 @@ lint:
 	sh -n scripts/update-cask.sh
 	sh -n scripts/test-update-cask.sh
 	sh -n scripts/publish-release.sh
+	sh -n scripts/confirm-engine-pin.sh
 	sh -n scripts/homebrew-tap.sh
 
 ci: lint test app
@@ -103,7 +104,9 @@ ifdef CI
 	@echo 'CI: skipping release'
 else
 	./scripts/publish-release.sh check "$(version)"
-	$(MAKE) dist version="$(version)" build_number="$(build_number)"
+	@set -eu; \
+	keep_pin="$$(./scripts/confirm-engine-pin.sh)"; \
+	$(MAKE) dist KEEP_ENGINE_PIN="$$keep_pin" version="$(version)" build_number="$(build_number)"
 	./scripts/publish-release.sh publish "$(version)" "$(build_number)" "$(DMG)"
 endif
 
