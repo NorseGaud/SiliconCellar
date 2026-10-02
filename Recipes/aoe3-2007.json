@@ -1,0 +1,16 @@
+{
+  "id": "aoe3-2007",
+  "title": "Age of Empires III (2007)",
+  "steamID": "105450",
+  "launcher": "steam",
+  "installFolder": "Age Of Empires 3",
+  "executable": "age3.exe",
+  "executableRelativePath": "bin/age3.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "wine"
+}

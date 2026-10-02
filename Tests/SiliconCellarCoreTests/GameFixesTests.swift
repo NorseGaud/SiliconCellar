@@ -19,10 +19,24 @@ final class GameFixesTests: XCTestCase {
 
     func testBundledFixHashes() throws {
         let root = try GameFixes.fixesRoot()
-        let renderer = try Data(contentsOf: root.appendingPathComponent(GameFixes.cncDdrawPath))
-        XCTAssertEqual(SteamInstaller.digest(of: renderer), GameFixes.cncDdrawSHA)
-        let proxy = try Data(contentsOf: root.appendingPathComponent("Witcher3/amd_fidelityfx_loader_dx12.dll"))
-        XCTAssertEqual(SteamInstaller.digest(of: proxy), GameFixes.witcherProxySHA)
+        try assertArchive(
+            root.appendingPathComponent(GameFixes.cncDdrawArchive),
+            archiveSHA: GameFixes.cncDdrawArchiveSHA,
+            member: "ddraw.dll",
+            fileSHA: GameFixes.cncDdrawSHA
+        )
+        try assertArchive(
+            root.appendingPathComponent(GameFixes.witcherProxyArchive),
+            archiveSHA: GameFixes.witcherProxyArchiveSHA,
+            member: "amd_fidelityfx_loader_dx12.dll",
+            fileSHA: GameFixes.witcherProxySHA
+        )
+        try assertArchive(
+            root.appendingPathComponent("MFC42/mfc42.tar.xz"),
+            archiveSHA: GameFixes.mfc42ArchiveSHA,
+            member: "mfc42.dll",
+            fileSHA: GameFixes.mfc42DLLSHA
+        )
     }
 
     func testEldenTemplateUsesDisplaySize() throws {
@@ -40,8 +54,7 @@ final class GameFixesTests: XCTestCase {
         let runtime = try makeRuntime(id: "red-alert2", folder: "Command & Conquer Red Alert II", executable: "Ra2.exe")
         try runtime.applyGameFixes()
         let dll = try Data(contentsOf: runtime.gameFolder.appendingPathComponent("ddraw.dll"))
-        let bundled = try Data(contentsOf: try GameFixes.fixesRoot().appendingPathComponent(GameFixes.cncDdrawPath))
-        XCTAssertEqual(dll, bundled)
+        XCTAssertEqual(SteamInstaller.digest(of: dll), GameFixes.cncDdrawSHA)
         XCTAssertTrue(FileManager.default.fileExists(atPath: runtime.gameFolder.appendingPathComponent("ddraw.ini").path))
         XCTAssertTrue(
             FileManager.default.fileExists(
@@ -104,6 +117,21 @@ final class GameFixesTests: XCTestCase {
             "drive_c/users/crossover/Games/Age of Empires 3 DE/Common/GraphicalProfile.xml"
         )
         XCTAssertFalse(FileManager.default.fileExists(atPath: graphics.path))
+    }
+
+    private func assertArchive(_ archive: URL, archiveSHA: String, member: String, fileSHA: String) throws {
+        XCTAssertEqual(SteamInstaller.digest(of: try Data(contentsOf: archive)), archiveSHA)
+        let stage = FileManager.default.temporaryDirectory.appendingPathComponent("archive-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stage) }
+        let tar = Process()
+        tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        tar.arguments = ["-xJf", archive.path, "-C", stage.path]
+        try tar.run()
+        tar.waitUntilExit()
+        XCTAssertEqual(tar.terminationStatus, 0)
+        let unpacked = try Data(contentsOf: stage.appendingPathComponent(member))
+        XCTAssertEqual(SteamInstaller.digest(of: unpacked), fileSHA)
     }
 
     private func makeRuntime(

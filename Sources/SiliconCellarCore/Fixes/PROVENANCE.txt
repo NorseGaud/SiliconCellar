@@ -1,7 +1,8 @@
-Witcher 3 proxy: tholtman1-del/witcher3-crossover-fix dc6c8f60c48ed08b61400e5b0a7327b5fdba63b1 (MIT). See Witcher3/LICENSE.txt.
-cnc-ddraw: gitTerebi/cnc-ddraw-ra2 823fdd1feabec091ab14076181a4a6982a58166b (MIT, FunkyFr3sh). See CncDdraw/LICENSE.txt.
+Witcher 3 proxy: tholtman1-del/witcher3-crossover-fix dc6c8f60c48ed08b61400e5b0a7327b5fdba63b1 (MIT). Stored as Witcher3/amd_fidelityfx_loader_dx12.tar.xz and unpacked on Play. See Witcher3/LICENSE.txt.
+cnc-ddraw: gitTerebi/cnc-ddraw-ra2 823fdd1feabec091ab14076181a4a6982a58166b (MIT, FunkyFr3sh). Stored as CncDdraw/ddraw.tar.xz and unpacked on Play. See CncDdraw/LICENSE.txt.
 Red Alert 2 installs it as ddraw.dll. Heroes III installs it as xdd.dll.
 Company of Heroes 3: Microsoft VC++ 2019 x64 redistributable, SHA-256 pinned in GameFixes.
 Zero Hour online installer: https://cdn.playgenerals.online/GeneralsOnline_setup_092226_QFE2.exe
+MFC42/mfc42.tar.xz: Microsoft Visual C++ 6 SP4 mfc42.dll. Unpacked on Play. See MFC42/NOTICE.txt. Not MIT.
 AoE3 and Elden Ring XML files are generic settings templates.
 Red Dead Redemption 2 system.xml is a graphics-only settings template. The Rockstar Games Launcher is downloaded from gamedownloads.rockstargames.com and checked with SHA-256 321886457b7e4ab727a27671c17a815684a3943579eedf7e2248a3b9f0973746.

@@ -48,6 +48,7 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 
 - [x] [Age of Empires II (2013)](Recipes/aoe2-hd.json)
 - [ ] [Age of Empires II: Definitive Edition](Recipes/aoe2.json)
+- [ ] [Age of Empires III (2007)](Recipes/aoe3-2007.json)
 - [ ] [Age of Empires III: Definitive Edition](Recipes/aoe3.json)
 - [ ] [Age of Empires IV](Recipes/aoe4.json)
 - [ ] [Age of Mythology: Retold](Recipes/aom-retold.json)
@@ -232,7 +233,7 @@ Silicon Cellar is free software under the [GNU General Public License v3.0 or la
 Bundled parts keep their own licences:
 
 - The Wine Engine is LGPL-2.1-or-later. Its bundled libraries are LGPL or permissive. Their licence files are in `Contents/Resources/Engine/share/doc`.
-- The game fixes in `Sources/SiliconCellarCore/Fixes` are MIT. Each fix folder has its licence file. See `PROVENANCE.txt`.
+- The game fixes in `Sources/SiliconCellarCore/Fixes` are MIT, except `Fixes/MFC42/mfc42.tar.xz`. That archive holds Microsoft's Visual C++ 6 library. Play unpacks it when Age of Empires III (2007) needs it. See `PROVENANCE.txt`.
 - The renderer packages keep the licences of their inputs. See [NorseGaud/siliconcellar-renderers](https://github.com/NorseGaud/siliconcellar-renderers).
 
 ## Support

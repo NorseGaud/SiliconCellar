@@ -8,10 +8,16 @@ enum GameFixes {
     static let coh3PackageURL =
         "https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/52B196BBE9016488C735E7B41805B651261FFA5D7AA86EB6A1D0095BE83687B2/VC_redist.x64.exe"
     static let aoe3ExecutableSHA = "a3fcaa23f57ffcfe5fb799e2b19f89560793784c73aded74747d955c95a4c625"
+    /// `Fixes/MFC42/mfc42.tar.xz` holds `mfc42.dll` from the Visual C++ 6 SP4 redistributable.
+    static let mfc42ArchiveSHA = "35140a3cb9baf12546f86df9c96554d99864fe2dbe6ab46482497ba322999310"
+    static let mfc42DLLSHA = "ec63a85030c60716acdcf060abfaa95a6a3528631622fa60e7d17fbea2f751f9"
     static let heroesMusicOriginalSHA = "09e2dec3d1e996571fb2c95e5de393410d486f1728c86473b550282edd83588c"
     static let heroesMusicFixedSHA = "57191b1e7a07df187ee4aff128c0f522d1ac11a7657ebe7e4f40d3b5f99b23c8"
-    static let cncDdrawPath = "CncDdraw/ddraw.dll"
+    static let cncDdrawArchive = "CncDdraw/ddraw.tar.xz"
+    static let cncDdrawArchiveSHA = "18cf1ccd2af6af3e8227ff5e787425c07d5404a2ee6aaf684866ad3425484c67"
     static let cncDdrawSHA = "6a29d666b6e06d9dfe56d7489a3d88820e514316ff481cf63a9fe7bcbd59ab29"
+    static let witcherProxyArchive = "Witcher3/amd_fidelityfx_loader_dx12.tar.xz"
+    static let witcherProxyArchiveSHA = "8f75453d58b7d324600994b8cad060a6e6beaf3c83fe04edc21a40466e233de2"
     static let generalsOnlineURL = "https://cdn.playgenerals.online/GeneralsOnline_setup_092226_QFE2.exe"
     static let generalsOnlineSHA = "307d27ac21cd398259dec4e95f4eb85f90d571bdc0efe063a65734386896317b"
     static let generalsOnlineFiles = [
@@ -139,6 +145,7 @@ extension Runtime {
         case "witcher3": try applyWitcherProxy()
         case "coh3": try applyCoh3Runtime()
         case "aoe3": try applyAoe3Startup()
+        case "aoe3-2007": try applyAoe32007KeyLibrary()
         case "elden-ring": try applyEldenGraphics()
         case "red-alert2": try applyRedAlertDraw()
         case "heroes3": try applyHeroes3Fixes()
@@ -190,7 +197,13 @@ extension Runtime {
         }
         let backup = folder.appendingPathComponent("amd_fidelityfx_loader_dx12_orig.dll")
         if !files.fileExists(backup) { try files.write(current, to: backup) }
-        try installBundledFile("Witcher3/amd_fidelityfx_loader_dx12.dll", to: loader)
+        try unpackBundledArchive(
+            GameFixes.witcherProxyArchive,
+            member: "amd_fidelityfx_loader_dx12.dll",
+            to: loader,
+            archiveSHA: GameFixes.witcherProxyArchiveSHA,
+            fileSHA: GameFixes.witcherProxySHA
+        )
         guard SteamInstaller.digest(of: try files.read(loader)) == GameFixes.witcherProxySHA else {
             try restoreWitcherLoader()
             throw PortError("The Witcher 3 graphics proxy failed verification. The original loader was restored.")
@@ -282,6 +295,64 @@ extension Runtime {
         throw PortError("The pinned Microsoft runtime could not be extracted.")
     }
 
+    /// The 2007 CD-key window loads `PidGen.dll`, which imports `MFC42.DLL`. Wine does not ship that library.
+    private func applyAoe32007KeyLibrary() throws {
+        guard let folder = game?.deletingLastPathComponent() else { return }
+        let library = folder.appendingPathComponent("mfc42.dll")
+        if let current = try? files.read(library), SteamInstaller.digest(of: current) == GameFixes.mfc42DLLSHA {
+            return
+        }
+        sink.say("Installing the Microsoft library Age of Empires III uses for its CD-key check…")
+        try unpackBundledArchive(
+            "MFC42/mfc42.tar.xz",
+            member: "mfc42.dll",
+            to: library,
+            archiveSHA: GameFixes.mfc42ArchiveSHA,
+            fileSHA: GameFixes.mfc42DLLSHA
+        )
+        guard SteamInstaller.digest(of: try files.read(library)) == GameFixes.mfc42DLLSHA else {
+            throw PortError("The Microsoft library failed verification.")
+        }
+    }
+
+    /// Unpack a bundled `.tar.xz` when `destination` is missing or does not match `fileSHA`.
+    private func unpackBundledArchive(
+        _ relative: String,
+        member: String,
+        to destination: URL,
+        archiveSHA: String,
+        fileSHA: String
+    ) throws {
+        if let current = try? files.read(destination), SteamInstaller.digest(of: current) == fileSHA {
+            return
+        }
+        let archive = try GameFixes.fixesRoot().appendingPathComponent(relative)
+        let packed = try Data(contentsOf: archive)
+        guard SteamInstaller.digest(of: packed) == archiveSHA else {
+            throw PortError("The bundled archive \(relative) does not match the pinned SHA-256.")
+        }
+        let stage = root.appendingPathComponent("archive-extract")
+        if files.fileExists(stage) { try files.removeItem(stage) }
+        try files.createDirectory(stage)
+        defer { try? files.removeItem(stage) }
+        try commands.run(
+            executable: URL(fileURLWithPath: "/usr/bin/tar"),
+            arguments: ["-xJf", archive.path, "-C", stage.path],
+            environment: [:],
+            timeout: 30,
+            workingDirectory: nil
+        )
+        let extracted = stage.appendingPathComponent(member)
+        guard files.fileExists(extracted),
+            SteamInstaller.digest(of: try files.read(extracted)) == fileSHA
+        else {
+            throw PortError("The bundled archive \(relative) did not contain \(member).")
+        }
+        try files.createDirectory(destination.deletingLastPathComponent())
+        if files.fileExists(destination) { try files.removeItem(destination) }
+        try files.moveItem(from: extracted, to: destination)
+    }
+
     private func applyAoe3Startup() throws {
         guard let game, files.fileExists(game) else { return }
         guard SteamInstaller.digest(of: try files.read(game)) == GameFixes.aoe3ExecutableSHA else {
@@ -310,7 +381,13 @@ extension Runtime {
 
     private func applyRedAlertDraw() throws {
         guard let folder = game?.deletingLastPathComponent() else { return }
-        try installBundledFile(GameFixes.cncDdrawPath, to: folder.appendingPathComponent("ddraw.dll"))
+        try unpackBundledArchive(
+            GameFixes.cncDdrawArchive,
+            member: "ddraw.dll",
+            to: folder.appendingPathComponent("ddraw.dll"),
+            archiveSHA: GameFixes.cncDdrawArchiveSHA,
+            fileSHA: GameFixes.cncDdrawSHA
+        )
         try installBundledFile("RedAlert2/ddraw.ini", to: folder.appendingPathComponent("ddraw.ini"))
         try installBundledFile(
             "RedAlert2/Shaders/interpolation/catmull-rom-bilinear.glsl",
@@ -320,7 +397,13 @@ extension Runtime {
 
     private func applyHeroes3Fixes() throws {
         guard let folder = game?.deletingLastPathComponent() else { return }
-        try installBundledFile(GameFixes.cncDdrawPath, to: folder.appendingPathComponent("xdd.dll"))
+        try unpackBundledArchive(
+            GameFixes.cncDdrawArchive,
+            member: "ddraw.dll",
+            to: folder.appendingPathComponent("xdd.dll"),
+            archiveSHA: GameFixes.cncDdrawArchiveSHA,
+            fileSHA: GameFixes.cncDdrawSHA
+        )
         try installBundledFile("Heroes3/ddraw.ini", to: folder.appendingPathComponent("ddraw.ini"))
         let library = folder.appendingPathComponent("MSS32.DLL")
         guard files.fileExists(library) else { return }

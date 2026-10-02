@@ -1,0 +1,6 @@
+mfc42.tar.xz holds mfc42.dll, Microsoft's Visual C++ 6.0 Service Pack 4 library.
+The library comes from VC6RedistSetup_deu.exe, SHA-256 c2eb91d9c4448d50e46a32fecbcc3b418706d002beab9b5f4981de552098cee7.
+The archive SHA-256 is 35140a3cb9baf12546f86df9c96554d99864fe2dbe6ab46482497ba322999310.
+The unpacked file SHA-256 is ec63a85030c60716acdcf060abfaa95a6a3528631622fa60e7d17fbea2f751f9.
+Microsoft holds the copyright. This file is not under the MIT licence of the other fix files.
+On Play, Silicon Cellar unpacks it next to PidGen.dll when that copy is missing or does not match.
