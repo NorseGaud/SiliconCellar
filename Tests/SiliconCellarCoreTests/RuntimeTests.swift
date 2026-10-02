@@ -486,6 +486,27 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(chosen, [running[1]])
     }
 
+    func testWineHostActivatesOnlySteamWindowOwner() {
+        let steamExe: Int32 = 8750
+        let steamWebHelper: Int32 = 9868
+        let explorerDesktop: Int32 = 9708
+        let candidates = [explorerDesktop, steamExe, steamWebHelper]
+        XCTAssertEqual(
+            WineHost.activationTargets(candidates: candidates, windowOwner: steamWebHelper),
+            [steamWebHelper]
+        )
+        XCTAssertEqual(WineHost.activationTargets(candidates: candidates, windowOwner: nil), candidates)
+    }
+
+    func testSteamDialogsRaiseAfterMainWindow() {
+        let windows = [
+            SteamUIFocus.WindowArea(name: "Uninstall", area: 648 * 224),
+            SteamUIFocus.WindowArea(name: "", area: 400 * 300),
+            SteamUIFocus.WindowArea(name: "Steam", area: 1280 * 800),
+        ]
+        XCTAssertEqual(SteamUIFocus.raiseOrder(windows), ["Steam", "Uninstall"])
+    }
+
     func testOpenSteamRelaunchesBareSteamWhenSessionAlreadyLive() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
@@ -827,6 +848,39 @@ final class RuntimeTests: XCTestCase {
                 $0.name == "wine" && $0.arguments.contains("reg") && $0.arguments.contains("gl")
             })
         )
+    }
+
+    func testPlayDirectLaunchPassesExecutableArguments() throws {
+        let recipe = Recipe(
+            id: "aoe2-hd",
+            title: "Age of Empires II (2013)",
+            steamID: "221380",
+            installFolder: "Age2HD",
+            executable: "AoK HD.exe",
+            directLaunch: true,
+            executableArguments: ["SKIPINTRO"]
+        )
+        let env = try makeEnvironment(recipe: recipe)
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        try writeSignedIn(env)
+        let gameDir = env.runtime.steamLibrary.appendingPathComponent("steamapps/common/Age2HD")
+        try FileManager.default.createDirectory(at: gameDir, withIntermediateDirectories: true)
+        try Data("exe".utf8).write(to: gameDir.appendingPathComponent("AoK HD.exe"))
+        try """
+        "AppState" { "appid" "221380" "installdir" "Age2HD" "StateFlags" "4" }
+        """.write(
+            to: env.runtime.steamLibrary.appendingPathComponent("steamapps/appmanifest_221380.acf"),
+            atomically: true,
+            encoding: .utf8
+        )
+        env.steamClient.running = true
+        env.commands.started.removeAll()
+        try env.runtime.playGame()
+        let arguments = try XCTUnwrap(env.commands.started.last?.1)
+        XCTAssertEqual(arguments.suffix(2).map { ($0 as NSString).lastPathComponent }, ["AoK HD.exe", "SKIPINTRO"])
+        XCTAssertFalse(arguments.contains("explorer"))
+        XCTAssertFalse(arguments.contains("-applaunch"))
     }
 
     func testPlayDirectLaunchUsesExactDisplayDesktopSize() throws {
