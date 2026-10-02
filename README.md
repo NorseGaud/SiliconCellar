@@ -40,6 +40,35 @@ brew install --cask norsegaud/siliconcellar/siliconcellar
 
 The cask is in [NorseGaud/homebrew-siliconcellar](https://github.com/NorseGaud/homebrew-siliconcellar). Or download the DMG from [Releases](https://github.com/NorseGaud/SiliconCellar/releases). `brew uninstall --zap --cask siliconcellar` also removes the Wine prefix, Steam, and games under `~/Library/Application Support/SiliconCellar`.
 
+## Supported games
+
+Each game below has a recipe in `Recipes/`. When you add a recipe, add the game to this list. A checkmark means the game was installed and played with the current recipe. After that test, change `[ ]` to `[x]`.
+
+[`Recipes/QUEUE.md`](Recipes/QUEUE.md) is the list of owned games that do not have a recipe yet. `Recipes/spacewar.json` is the example recipe. It is not a supported game.
+
+- [x] [Age of Empires II (2013)](Recipes/aoe2-hd.json)
+- [ ] [Age of Empires II: Definitive Edition](Recipes/aoe2.json)
+- [ ] [Age of Empires III: Definitive Edition](Recipes/aoe3.json)
+- [ ] [Age of Empires IV](Recipes/aoe4.json)
+- [ ] [Age of Mythology: Retold](Recipes/aom-retold.json)
+- [ ] [Command & Conquer: Generals Zero Hour](Recipes/zero-hour.json)
+- [ ] [Command & Conquer: Red Alert 2](Recipes/red-alert2.json)
+- [ ] [Company of Heroes 3](Recipes/coh3.json)
+- [ ] [Counter-Strike 2](Recipes/cs2.json)
+- [ ] [Diablo II: Resurrected](Recipes/d2r.json)
+- [ ] [Diablo IV](Recipes/diablo4.json)
+- [ ] [Elden Ring](Recipes/elden-ring.json)
+- [ ] [Grand Theft Auto: San Andreas – The Definitive Edition](Recipes/san-andreas-de.json)
+- [ ] [Heroes of Might and Magic III](Recipes/heroes3.json)
+- [ ] [Hogwarts Legacy](Recipes/hogwarts-legacy.json)
+- [x] [MDK](Recipes/mdk.json)
+- [x] [MDK 2](Recipes/mdk2.json)
+- [ ] [Overwatch](Recipes/overwatch.json)
+- [ ] [Path of Exile 2](Recipes/poe2.json)
+- [ ] [Red Dead Redemption 2](Recipes/rdr2.json)
+- [ ] [The Elder Scrolls V: Skyrim Special Edition](Recipes/skyrim-se.json)
+- [ ] [The Witcher 3: Wild Hunt — Remastered](Recipes/witcher3.json)
+
 ## Build
 
 For day-to-day development (lint, test, `make dev`, Engine build), see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -57,7 +57,7 @@ for tag in tags:
 print(f"sc-{crossover}-{(max(numbers) + 1) if numbers else 1}")
 PY
     )"
-    echo "Tagging $tag…"
+    echo "Tagging ${tag}"
     git -C "$WINE" tag "$tag"
     git -C "$WINE" push origin "$tag"
 fi
