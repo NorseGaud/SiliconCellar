@@ -19,8 +19,8 @@ final class GameFixesTests: XCTestCase {
 
     func testBundledFixHashes() throws {
         let root = try GameFixes.fixesRoot()
-        let heroes = try Data(contentsOf: root.appendingPathComponent("Heroes3/xdd.dll"))
-        XCTAssertEqual(SteamInstaller.digest(of: heroes), GameFixes.heroesRendererSHA)
+        let renderer = try Data(contentsOf: root.appendingPathComponent(GameFixes.cncDdrawPath))
+        XCTAssertEqual(SteamInstaller.digest(of: renderer), GameFixes.cncDdrawSHA)
         let proxy = try Data(contentsOf: root.appendingPathComponent("Witcher3/amd_fidelityfx_loader_dx12.dll"))
         XCTAssertEqual(SteamInstaller.digest(of: proxy), GameFixes.witcherProxySHA)
     }
@@ -40,7 +40,7 @@ final class GameFixesTests: XCTestCase {
         let runtime = try makeRuntime(id: "red-alert2", folder: "Command & Conquer Red Alert II", executable: "Ra2.exe")
         try runtime.applyGameFixes()
         let dll = try Data(contentsOf: runtime.gameFolder.appendingPathComponent("ddraw.dll"))
-        let bundled = try Data(contentsOf: try GameFixes.fixesRoot().appendingPathComponent("RedAlert2/ddraw.dll"))
+        let bundled = try Data(contentsOf: try GameFixes.fixesRoot().appendingPathComponent(GameFixes.cncDdrawPath))
         XCTAssertEqual(dll, bundled)
         XCTAssertTrue(FileManager.default.fileExists(atPath: runtime.gameFolder.appendingPathComponent("ddraw.ini").path))
         XCTAssertTrue(

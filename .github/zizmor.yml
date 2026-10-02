@@ -1,0 +1,4 @@
+rules:
+  # OpenSSF Scorecard reads "$/..." as an unpinned third-party action.
+  self-repository:
+    disable: true

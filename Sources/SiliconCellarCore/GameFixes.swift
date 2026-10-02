@@ -10,7 +10,8 @@ enum GameFixes {
     static let aoe3ExecutableSHA = "a3fcaa23f57ffcfe5fb799e2b19f89560793784c73aded74747d955c95a4c625"
     static let heroesMusicOriginalSHA = "09e2dec3d1e996571fb2c95e5de393410d486f1728c86473b550282edd83588c"
     static let heroesMusicFixedSHA = "57191b1e7a07df187ee4aff128c0f522d1ac11a7657ebe7e4f40d3b5f99b23c8"
-    static let heroesRendererSHA = "6a29d666b6e06d9dfe56d7489a3d88820e514316ff481cf63a9fe7bcbd59ab29"
+    static let cncDdrawPath = "CncDdraw/ddraw.dll"
+    static let cncDdrawSHA = "6a29d666b6e06d9dfe56d7489a3d88820e514316ff481cf63a9fe7bcbd59ab29"
     static let generalsOnlineURL = "https://cdn.playgenerals.online/GeneralsOnline_setup_092226_QFE2.exe"
     static let generalsOnlineSHA = "307d27ac21cd398259dec4e95f4eb85f90d571bdc0efe063a65734386896317b"
     static let generalsOnlineFiles = [
@@ -309,7 +310,7 @@ extension Runtime {
 
     private func applyRedAlertDraw() throws {
         guard let folder = game?.deletingLastPathComponent() else { return }
-        try installBundledFile("RedAlert2/ddraw.dll", to: folder.appendingPathComponent("ddraw.dll"))
+        try installBundledFile(GameFixes.cncDdrawPath, to: folder.appendingPathComponent("ddraw.dll"))
         try installBundledFile("RedAlert2/ddraw.ini", to: folder.appendingPathComponent("ddraw.ini"))
         try installBundledFile(
             "RedAlert2/Shaders/interpolation/catmull-rom-bilinear.glsl",
@@ -319,7 +320,7 @@ extension Runtime {
 
     private func applyHeroes3Fixes() throws {
         guard let folder = game?.deletingLastPathComponent() else { return }
-        try installBundledFile("Heroes3/xdd.dll", to: folder.appendingPathComponent("xdd.dll"))
+        try installBundledFile(GameFixes.cncDdrawPath, to: folder.appendingPathComponent("xdd.dll"))
         try installBundledFile("Heroes3/ddraw.ini", to: folder.appendingPathComponent("ddraw.ini"))
         let library = folder.appendingPathComponent("MSS32.DLL")
         guard files.fileExists(library) else { return }
