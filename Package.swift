@@ -14,7 +14,7 @@ let package = Package(
         .executable(name: "SiliconCellar", targets: ["SiliconCellarApp"]),
     ],
     targets: [
-        .target(name: "SiliconCellarCore"),
+        .target(name: "SiliconCellarCore", resources: [.copy("Fixes")]),
         .executableTarget(name: "siliconcellar", dependencies: ["SiliconCellarCore"]),
         .executableTarget(
             name: "SiliconCellarApp",

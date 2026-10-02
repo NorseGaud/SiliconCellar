@@ -1,0 +1,5 @@
+Elden Ring is a FromSoftware / Bandai Namco Entertainment game.
+Silicon Cellar is unofficial and is not affiliated with or endorsed by its publisher.
+The graphics XML is a generic settings template. It has no user identifiers.
+No game executable, account, save, or redistributable is bundled.
+Online multiplayer is unavailable. Steam ownership and sign-in are still required.

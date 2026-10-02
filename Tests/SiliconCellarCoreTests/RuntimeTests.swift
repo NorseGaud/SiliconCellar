@@ -381,6 +381,29 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(env.runtime.wineEnvironment()["CX_REPORT_REAL_USERNAME"], "1")
     }
 
+    func testCS2AndOverwatchKeepAShaderCache() throws {
+        for gameID in ["cs2", "overwatch"] {
+            var recipe = Recipe(id: gameID, title: gameID, steamID: "1", installFolder: "Game", executable: "game.exe")
+            recipe.renderer = "dxmt"
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("shader-cache-\(gameID)-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let runtime = Runtime(
+                recipe: recipe,
+                root: root,
+                wine: URL(fileURLWithPath: "/usr/bin/true"),
+                wineserver: URL(fileURLWithPath: "/usr/bin/true")
+            )
+            let cache = root.appendingPathComponent("graphics/\(gameID)/cache")
+            XCTAssertEqual(runtime.wineEnvironment()["DXMT_SHADER_CACHE"], "1")
+            XCTAssertEqual(runtime.wineEnvironment()["DXMT_SHADER_CACHE_PATH"], cache.path)
+            try runtime.prepareShaderCache()
+            XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
+        }
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        XCTAssertNil(env.runtime.wineEnvironment()["DXMT_SHADER_CACHE_PATH"])
+    }
+
     func testOpenSteamUpdatesPrefixAfterEngineChange() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }

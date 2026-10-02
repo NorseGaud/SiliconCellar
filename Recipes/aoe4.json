@@ -2,10 +2,14 @@
   "id": "aoe4",
   "title": "Age of Empires IV",
   "steamID": "1466860",
+  "launcher": "steam",
   "installFolder": "Age of Empires IV",
   "executable": "RelicCardinal.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }

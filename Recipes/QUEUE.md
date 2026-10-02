@@ -1,0 +1,84 @@
+# Steam library queue
+
+These 78 games are in the NorseGaud Steam account. They do not have a recipe and do not have a native macOS version. The list comes from the local Steam caches (`appcache/packageinfo.vdf` and `appcache/appinfo.vdf`) on 2026-10-01.
+
+For each game, make `Recipes/<id>.json` (see [Add a game](../README.md#add-a-game)), test it, and then change `[ ]` to `[x]`. The first executable is the default Steam launch option. The other executables are alternative launch options.
+
+- [ ] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`
+- [ ] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`
+- [ ] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`
+- [ ] **BRINK**: Steam ID `22350`, install folder `BRINK`, executable `brink.exe`
+- [ ] **Brothers - A Tale of Two Sons**: Steam ID `225080`, install folder `Brothers - A Tale of Two Sons`, executable `Binaries/Win32/Brothers.exe`, `Binaries/Win32/BrothersLauncher.exe`
+- [ ] **Call of Duty: Modern Warfare 2 (2009) - Multiplayer**: Steam ID `10190`, install folder `Call of Duty Modern Warfare 2`, executable `iw4mp.exe`
+- [ ] **Call of Juarez Gunslinger**: Steam ID `204450`, install folder `CoJ Gunslinger`, executable `CoJGunslinger.exe`
+- [ ] **Call of Juarez: Bound in Blood**: Steam ID `21980`, install folder `Call of Juarez - Bound in Blood`, executable `CoJBiBGame_x86.exe`
+- [ ] **Cities XL 2012**: Steam ID `201760`, install folder `Cities XL 2012`, executable `CitiesXL_2012.exe`
+- [ ] **Company of Heroes**: Steam ID `228200`, install folder `Company of Heroes Relaunch`, executable `RelicCOH.exe`
+- [ ] **Company of Heroes - Legacy Edition**: Steam ID `4560`, install folder `Company of Heroes`, executable `RelicCOH.exe`
+- [ ] **Company of Heroes: Opposing Fronts**: Steam ID `9340`, install folder `Company of Heroes`, executable `RelicCOH.exe`
+- [ ] **Company of Heroes: Tales of Valor**: Steam ID `20540`, install folder `Company of Heroes`, executable `RelicCOH.exe`
+- [ ] **Crysis**: Steam ID `17300`, install folder `Crysis`, executable `bin32/crysis.exe`, `bin64/crysis.exe`
+- [ ] **Crysis Warhead**: Steam ID `17330`, install folder `Crysis Warhead`, executable `bin64/crysis64.exe`
+- [ ] **Crysis Wars**: Steam ID `17340`, install folder `Crysis Wars`, executable `bin32/crysis.exe`
+- [ ] **Darksiders**: Steam ID `50620`, install folder `Darksiders`, executable `DarksidersPC.exe`
+- [ ] **Darksiders Warmastered Edition**: Steam ID `462780`, install folder `Darksiders Warmastered Edition`, executable `darksiders1.exe`
+- [ ] **Dead Island Riptide**: Steam ID `216250`, install folder `diriptide`, executable `DeadIslandGame_x86_rwdi.exe`
+- [ ] **Dead Space 2**: Steam ID `47780`, install folder `Dead Space 2`, executable `deadspace2.exe`, `Support/EA Help/Electronic_Arts_Technical_Support.htm`
+- [ ] **Dreamfall: The Longest Journey**: Steam ID `6300`, install folder `Dreamfall The Longest Journey`, executable `dreamfall.exe`
+- [ ] **Far Cry**: Steam ID `13520`, install folder `FarCry`, executable `Bin32/FarCry.exe`, `Bin32/FarCryConfigurator.exe`
+- [ ] **Far Cry 2**: Steam ID `19900`, install folder `Far Cry 2`, executable `bin/FarCry2.exe`, `bin/FC2Editor.exe`, `bin/FC2BenchmarkTool.exe`, `bin/FC2ServerLauncher.exe`
+- [ ] **Far Cry® 3**: Steam ID `220240`, install folder `Far Cry 3`, executable `bin/FC3UpdaterSteam.exe`
+- [ ] **Far Cry® 3 Blood Dragon**: Steam ID `233270`, install folder `Far Cry 3 Blood Dragon`, executable `bin/FC3BDUpdaterSteam.exe`
+- [ ] **Galactic Civilizations III**: Steam ID `226860`, install folder `Galactic Civilizations III`, executable `StardockLauncher.exe`
+- [ ] **Grey Goo**: Steam ID `290790`, install folder `GreyGoo`, executable `ClientLauncherG.exe`
+- [ ] **Halo: Spartan Assault**: Steam ID `277430`, install folder `Halo Spartan Assault`, executable `HaloSpartanAssault.exe`
+- [ ] **Halo: Spartan Strike**: Steam ID `324570`, install folder `HaloSpartanStrike`, executable `Game.exe`
+- [ ] **Killing Floor Mod: Defence Alliance 2**: Steam ID `35420`, install folder `killingfloor`, executable `System/KillingFloor.exe`
+- [ ] **King's Quest**: Steam ID `345390`, install folder `King's Quest`, executable `Binaries/Win/KingsQuest.exe`
+- [ ] **Little Nightmares**: Steam ID `424840`, install folder `Little Nightmares`, executable `Atlas/Binaries/Win64/LittleNightmares.exe`, `game.exe`
+- [ ] **Little Nightmares Enhanced Edition**: Steam ID `2149010`, install folder `Little Nightmares Enhanced Edition`, executable `Little_Nightmares_Enhanced.exe`
+- [ ] **Metro 2033**: Steam ID `43110`, install folder `Metro 2033`, executable `Metro2033.exe`
+- [ ] **Orcs Must Die!**: Steam ID `102600`, install folder `Orcs Must Die!`, executable `build/release/orcsmustdie.exe`
+- [ ] **Orcs Must Die! 2**: Steam ID `201790`, install folder `Orcs Must Die 2`, executable `build/release/OrcsMustDie2.exe`
+- [ ] **Red Faction: Armageddon**: Steam ID `55110`, install folder `red faction armageddon`, executable `rf4_launcher.exe`
+- [ ] **RIFT**: Steam ID `39120`, install folder `RIFT`, executable `riftpatchlive.exe`, `GlyphClientInternal.exe`, `GlyphClient.exe`
+- [ ] **Risen**: Steam ID `40300`, install folder `Risen`, executable `bin/Risen.exe`
+- [ ] **Risen 2 - Dark Waters**: Steam ID `40390`, install folder `Risen 2`, executable `system/risen2.exe`
+- [ ] **Rocksmith® 2014 Edition - Remastered**: Steam ID `221680`, install folder `Rocksmith2014`, executable `Rocksmith2014.exe`
+- [ ] **Sacred 2 Gold**: Steam ID `225640`, install folder `Sacred 2 Gold`, executable `system/sacred2.exe`
+- [ ] **Sacred Citadel**: Steam ID `207930`, install folder `sacred_citadel`, executable `sacredcitadel.exe`
+- [ ] **Saints Row 2**: Steam ID `9480`, install folder `Saints Row 2`, executable `sr2_pc.exe`
+- [ ] **Saints Row: The Third**: Steam ID `55230`, install folder `Saints Row the Third`, executable `game_launcher.exe`
+- [ ] **Section 8: Prejudice**: Steam ID `97100`, install folder `Section 8 Prejudice`, executable `S9.exe`
+- [ ] **Shashingo: Learn Japanese with Photography**: Steam ID `1632490`, install folder `Shashingo Learn Japanese with Photography`, executable `Shashingo.exe`
+- [ ] **Star Trek Online**: Steam ID `9900`, install folder `Star Trek Online`, executable `Star Trek Online.exe`
+- [ ] **STAR WARS™ Empire at War: Gold Pack**: Steam ID `32470`, install folder `Star Wars Empire at War`, executable `runme.exe`, `runme2.exe`
+- [ ] **StarDrive**: Steam ID `220660`, install folder `StarDrive`, executable `StarDrive.exe`
+- [ ] **String Theory**: Steam ID `402150`, install folder `String Theory`, executable `StringTheory.exe`
+- [ ] **The Chronicles of Riddick: Assault on Dark Athena**: Steam ID `9860`, install folder `Chronicles of Riddick - Assault on Dark Athena`, executable `System/Win32_x86/DarkAthena.exe`
+- [ ] **The Elder Scrolls IV: Oblivion Game of the Year Edition (2009)**: Steam ID `22330`, install folder `Oblivion`, executable `OblivionLauncher.exe`
+- [ ] **The Elder Scrolls V: Skyrim**: Steam ID `72850`, install folder `Skyrim`, executable `SkyrimLauncher.exe`
+- [ ] **The Longest Journey**: Steam ID `6310`, install folder `The Longest Journey`, executable `game.exe`
+- [ ] **The Settlers 7: Paths to a Kingdom - Gold Edition**: Steam ID `48210`, install folder `Settlers 7 Gold`, executable `Data/Base/_Dbg/Bin/Release/Settlers7R.exe`
+- [ ] **Titan Quest**: Steam ID `4540`, install folder `Titan Quest`, executable `Titan Quest.exe`
+- [ ] **Titan Quest Anniversary Edition**: Steam ID `475150`, install folder `Titan Quest Anniversary Edition`, executable `TQ.exe`, `WorkshopTool/TQWorkshopTool.exe`
+- [ ] **Tom Clancy's Ghost Recon**: Steam ID `15300`, install folder `Ghost Recon`, executable `ghostrecon.exe`
+- [ ] **Tom Clancy's Ghost Recon: Advanced Warfighter**: Steam ID `13640`, install folder `Ghost Recon Advanced Warfighter`, executable `graw.exe`
+- [ ] **Tom Clancy's Ghost Recon: Advanced Warfighter 2**: Steam ID `13510`, install folder `Ghost Recon Advanced Warfighter 2`, executable `graw2.exe`
+- [ ] **Tom Clancy's Ghost Recon: Desert Siege**: Steam ID `13620`, install folder `Ghost Recon`, executable `GhostRecon.exe`
+- [ ] **Tom Clancy's Ghost Recon: Island Thunder**: Steam ID `13630`, install folder `Ghost Recon`, executable `GhostRecon.exe`
+- [ ] **Tom Clancy's Rainbow Six: Vegas 2**: Steam ID `15120`, install folder `Rainbow Six Vegas 2`, executable `binaries/R6Vegas2_Game.exe`
+- [ ] **Unreal Tournament 3: Black Edition**: Steam ID `13210`, install folder `Unreal Tournament 3`, executable `Binaries/UT3.exe`, `Binaries/ut3.exe`, `Binaries/EOSBootstrapper.exe`
+- [ ] **Unreal Tournament: Game of the Year Edition**: Steam ID `13240`, install folder `Unreal Tournament`, executable `system/UnrealTournament.exe`
+- [ ] **Vessel**: Steam ID `108500`, install folder `Vessel`, executable `vessel.exe`
+- [ ] **Wallace & Gromit Ep 1: Fright of the Bumblebees**: Steam ID `31100`, install folder `Wallace and Gromit Ep1`, executable `WallaceGromit101.exe`
+- [ ] **Wallace & Gromit Ep 2: The Last Resort**: Steam ID `31110`, install folder `Wallace and Gromit Ep2`, executable `WallaceGromit102.exe`
+- [ ] **Wallace & Gromit Ep 3: Muzzled!**: Steam ID `31120`, install folder `Wallace and Gromit Ep3`, executable `WallaceGromit103.exe`
+- [ ] **Wallace & Gromit Ep 4: The Bogey Man**: Steam ID `31130`, install folder `Wallace and Gromit Ep4`, executable `WallaceGromit104.exe`
+- [ ] **Warhammer 40,000: Dawn of War - Anniversary Edition**: Steam ID `4570`, install folder `Dawn of War Gold`, executable `W40k.exe`
+- [ ] **Warhammer 40,000: Dawn of War - Dark Crusade**: Steam ID `4580`, install folder `Dawn of War Dark Crusade`, executable `darkcrusade.exe`
+- [ ] **Warhammer 40,000: Dawn of War - Soulstorm**: Steam ID `9450`, install folder `Dawn of War Soulstorm`, executable `soulstorm.exe`
+- [ ] **Warhammer 40,000: Dawn of War - Winter Assault**: Steam ID `9310`, install folder `Dawn of War Gold`, executable `W40kWA.exe`
+- [ ] **X-Tension**: Steam ID `2850`, install folder `X-Tension`, executable `runme.exe`
+- [ ] **X2: The Threat**: Steam ID `2800`, install folder `X2 - The Threat`, executable `x2.exe`
+- [ ] **X: Beyond the Frontier**: Steam ID `2840`, install folder `X Beyond the Frontier`, executable `runme.exe`

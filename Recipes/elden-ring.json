@@ -2,11 +2,15 @@
   "id": "elden-ring",
   "title": "Elden Ring",
   "steamID": "1245620",
+  "launcher": "steam",
   "installFolder": "ELDEN RING",
   "executable": "eldenring.exe",
   "executableRelativePath": "Game/eldenring.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }

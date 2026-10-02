@@ -168,7 +168,7 @@ final class RecipeStoreTests: XCTestCase {
             "spacewar", "aoe4", "aoe2", "aoe3", "coh3", "cs2", "zero-hour", "red-alert2",
             "overwatch", "diablo4", "poe2", "hogwarts-legacy", "skyrim-se",
             "san-andreas-de", "heroes3", "elden-ring", "aom-retold", "mdk", "mdk2",
-            "witcher3", "d2r",
+            "witcher3", "d2r", "rdr2",
         ]
         XCTAssertEqual(ids, Set(expected))
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.steamID, "38450")
@@ -183,6 +183,10 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.extraEnvironment["NGLIDE_ASPECT"], "0")
         XCTAssertEqual(recipes.first { $0.id == "aom-retold" }?.wineMacDriverOptions["FullscreenBelowNotch"], "y")
         XCTAssertEqual(recipes.first { $0.id == "skyrim-se" }?.rendererID, "dxmt-v0.72")
+        XCTAssertEqual(recipes.first { $0.id == "cs2" }?.rendererID, "dxmt")
+        XCTAssertEqual(recipes.first { $0.id == "overwatch" }?.rendererID, "dxmt")
+        XCTAssertEqual(recipes.first { $0.id == "overwatch" }?.graphicsOverrides, "dxgi,d3d11=n,b;d3d12=")
+        XCTAssertTrue(recipes.allSatisfy { RendererPackage.knownIDs.contains($0.rendererID) && $0.supportedLaunchers.contains($0.launcherKind) })
         let diablo2 = try XCTUnwrap(recipes.first { $0.id == "d2r" })
         XCTAssertEqual(diablo2.supportedLaunchers, [.steam, .battleNet])
         XCTAssertEqual(diablo2.launcherKind, .steam)

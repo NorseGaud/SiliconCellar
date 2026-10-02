@@ -2,10 +2,14 @@
   "id": "aoe2",
   "title": "Age of Empires II: Definitive Edition",
   "steamID": "813780",
+  "launcher": "steam",
   "installFolder": "AoE2DE",
   "executable": "AoE2DE_s.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }

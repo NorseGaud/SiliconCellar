@@ -66,6 +66,8 @@ Copy `Recipes/spacewar.json` and change the fields:
 
 Put the file in `Recipes/` or in `~/Library/Application Support/SiliconCellar/Recipes/`. The `id` must match the file name. `steamID` is the Steam app number. `installFolder` is the Steam `installdir` name.
 
+[`Recipes/QUEUE.md`](Recipes/QUEUE.md) lists the Windows-only Steam games that do not have a recipe yet. Each line gives the Steam ID, the install folder, and the executable. When you add a recipe for a game, mark its line with `[x]`. The app loads only `.json` files from `Recipes/`, so it ignores this file.
+
 ### Launcher
 
 A recipe with `steamID` can use Steam. A recipe with `battleNetProductCode` can use Battle.net. That code is the one that Battle.net uses in `--exec="launch <code>"` (for example `OSI` for Diablo II: Resurrected). For Battle.net, `installFolder` is the folder that Battle.net makes in `C:\Program Files (x86)`.
@@ -179,33 +181,9 @@ The toolkit does not send analytics.
 
 ## Roadmap
 
-Do these items in order. Each item gets its own design, plan, and tests. After each item, the app must build, pass tests, and run the current games. Fork third-party code into the NorseGaud GitHub account when we need a copy.
-
-- [x] **1. Engine.** Fork the CodeWeavers CrossOver 26.3 source (`crossover-sources-26.3.0.tar.gz`, LGPL) into `NorseGaud/wine`. Change `make engine` to build that fork instead of downloading Gcenx Wine Staging. Done in release [`sc-26.3.0-2`](https://github.com/NorseGaud/wine/releases/tag/sc-26.3.0-2). The D3DMetal load check moved to item 2. Add these Wine fixes:
-  - `BOOLEAN` syscall arguments: clang assumes that callers extend small arguments, but Windows callers set only the low byte. `NtQueryDirectoryObject` then misreads its flags, and Path of Exile 2 freezes after login. Backport the upstream Wine fix (`d1415ab24e`, `f43402cde3`, test `565091afa4`), which wraps every affected syscall.
-  - San Andreas DE: add `--in-process-gpu --use-gl=angle --use-angle=swiftshader` to `SocialClubHelper.exe` so Rockstar sign-in works. The recipe sets `SILICONCELLAR_CHILD_ARGS`.
-  - Controllers: build `winebus` with SDL2.
-  - Age of Mythology: Retold: fit fullscreen below the MacBook notch in `winemac`. The recipe sets the `FullscreenBelowNotch` Mac driver option (`macDriverOptions`).
-  - Add the Wine LGPL notice and a source link to the app.
-- [x] **2. Renderers.** Add the recipe `renderer` field (see [Renderer](#renderer)). Packages are in release [`r1`](https://github.com/NorseGaud/siliconcellar-renderers/releases/tag/r1) of [NorseGaud/siliconcellar-renderers](https://github.com/NorseGaud/siliconcellar-renderers). Its `build-packages.sh` makes them from pinned inputs:
-  - DXVK and DXMT: from the Sikarugir renderer package ([Sikarugir-App/Wrapper](https://github.com/Sikarugir-App/Wrapper/releases) `Template-1.0.15.tar.xz`, SHA-256 `34273bcce885ce5a7fd6937af9ea344bb9961de7d55d6193f7413142e835c8c3`). Upstream [DXMT v0.72](https://github.com/3Shain/dxmt/releases/tag/v0.72) for Skyrim, because v0.80 crashes after the intro. The Skyrim recipe uses `dxmt-v0.72`.
-  - D3DMetal: the unchanged `redist` folder of Apple's "Evaluation environment for Windows games", with Apple's `License.rtf` and `Acknowledgements.rtf`. The Template also contains D3DMetal 3.0, but the package uses Apple's DMG so that it has Apple's licence files. Apple's licence (EA18380) permits non-commercial distribution of `D3DMetal.framework` and of the files in `/redist`. The default is 4.0 beta 2 (DMG SHA-256 `6248a0edc61553790753e5e9c060b8e53c940ed197f11409dcc34a35e05becc1`). The fallback is 3.0 (DMG SHA-256 `d49395fb07e536804d1da0858590e53f6aa6fab12512e18fd80a74c87f9f063c`). The app shows Apple's licence before the first D3DMetal game.
-  - Engine [`sc-26.3.0-4`](https://github.com/NorseGaud/wine/releases/tag/sc-26.3.0-4): Steam and the game share one Wine session, so an environment variable cannot select the layer for one game. The Engine reads `AppDefaults\<executable>\SiliconCellar\DllPath` and `D3DSharedPath` when a process starts. This replaces the closed CrossOver `cxcompatdb.so`. The folder can also add DLLs that Wine does not have, such as DXMT `winemetal.dll`.
-  - Remove the old cleanup that deleted `/Applications/Game Porting Toolkit.app`.
-- [ ] **3. Launchers.** Add a `launcher` field to recipes: `steam` or `battlenet` (see [Launcher](#launcher)). Add the Battle.net install, sign-in, and play flow with the official Blizzard installer (pinned SHA-256). Allow recipes without a `steamID`. Add Diablo II: Resurrected (`D2R.exe`, install folder `Diablo II Resurrected`, renderer `d3dmetal`).
-  - Battle.net has its own prefix, `prefix-battlenet`. The process list does not show which prefix a `wineserver` serves, so Silicon Cellar checks the server socket of each prefix (`/tmp/.wine-<uid>/server-<device>-<inode>/socket`).
-  - A recipe with both a `steamID` and a `battleNetProductCode` can use either launcher. Steam is the default, and the user chooses for each game. D2R has both (Steam app `2536520`).
-  - The code and tests are done. To do: a live test with a Battle.net account, to confirm the sign-in mark (`Client.SavedAccountNames`) and the install mark (`.build.info` in the game folder). Also a live test of D2R from Steam.
-- [ ] **4. Per-game fixes.**
-  - Witcher 3: fork [tholtman1-del/witcher3-crossover-fix](https://github.com/tholtman1-del/witcher3-crossover-fix) (MIT) to NorseGaud. Build the FidelityFX proxy ourselves. Install it before play and remove it on uninstall.
-  - Company of Heroes 3: use the Wine Staging `ucrtbase.dll`.
-  - Age of Empires III and Elden Ring: seed default graphics settings.
-  - Red Alert 2 and Heroes III: use cnc-ddraw.
-  - Zero Hour: install the community GeneralsOnline release (pinned SHA-256).
-  - Heroes III: apply the stereo audio fix by Narzoul.
-  - Age of Empires II: cache the DLC check that slows the game. This patches game code, so a game update can break it.
-- [ ] **5. Shader pre-build.** Build DXMT shader pipelines before play for Counter-Strike 2 and Overwatch to reduce first-play stutter.
-- [ ] **6. Re-test every recipe.** Pick the working renderer and launcher for each recipe and record it in the recipe.
+- [ ] **Battle.net live test.** Confirm the sign-in mark (`Client.SavedAccountNames`) and the install mark (`.build.info` in the game folder) with a Battle.net account.
+- [ ] **Age of Empires II.** Add the DLC-query cache. This is an Engine overlay (`wine11-aoe2-selection-v5`). A game update can break it.
+- [ ] **Red Dead Redemption 2 Engine.** Add the `wine11-rdr2-rockstar-v1` Engine. The recipe already uses `d3dmetal` and installs the Rockstar Games Launcher.
 
 ## Support
 

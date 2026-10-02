@@ -270,7 +270,29 @@ public final class Runtime: @unchecked Sendable {
             + recipe.graphicsOverrides
         environment.merge(recipe.launcherKind.engineEnvironment) { _, launcherValue in launcherValue }
         for (key, value) in recipe.extraEnvironment { environment[key] = value }
+        if let shaderCache = shaderCacheDirectory {
+            environment["DXMT_SHADER_CACHE"] = "1"
+            environment["DXMT_SHADER_CACHE_PATH"] = shaderCache.path
+        }
         return environment
+    }
+
+    /// Per-game DXMT pipeline cache for Counter-Strike 2 and Overwatch.
+    var shaderCacheDirectory: URL? {
+        guard recipe.id == "cs2" || recipe.id == "overwatch" else { return nil }
+        return root.appendingPathComponent("graphics/\(recipe.id)/cache")
+    }
+
+    /// Creates the cache directory before play. DXMT writes compiled shaders there and reads them on the next launch.
+    func prepareShaderCache() throws {
+        guard let cache = shaderCacheDirectory else { return }
+        let alreadySaved = files.fileExists(cache)
+        try files.createDirectory(cache)
+        if alreadySaved {
+            sink.say("\(recipe.title) reuses compiled DXMT shaders.")
+        } else {
+            sink.say("\(recipe.title) will save compiled DXMT shaders for the next launch.")
+        }
     }
 
     public func check() throws {
@@ -405,6 +427,7 @@ public final class Runtime: @unchecked Sendable {
             throw PortError("Sign in in the Steam window, then uninstall the game.")
         }
         try ensureSteamClient()
+        try restoreWitcherLoader()
         try openSteam(play: false, uninstall: true)
         try waitForUninstall()
         try removeInstalledGameFiles()
@@ -415,6 +438,8 @@ public final class Runtime: @unchecked Sendable {
         if recipe.launcherKind == .battleNet { return try playBattleNetGame() }
         try validateGameInstallation()
         try ensureSteamClient()
+        try applyGameFixes()
+        try prepareShaderCache()
         let rendererFolder = try prepareRenderer()
         try promoteLibraryManifest()
         try quarantineGameFiles()
@@ -730,6 +755,7 @@ public final class Runtime: @unchecked Sendable {
             try setAppDefault(section: "Mac Driver", name: name, value: value)
         }
         try applyRenderer(folder: rendererFolder)
+        try applyRedDeadCompanions(rendererFolder: rendererFolder)
     }
 
     private static let rendererSection = "SiliconCellar"
@@ -752,6 +778,25 @@ public final class Runtime: @unchecked Sendable {
             )
         }
         sink.say("\(recipe.title) uses the \(package.id) renderer (\(package.version)).")
+    }
+
+    /// Rockstar's launcher and Social Club use the same D3DMetal folder as RDR2.exe.
+    /// Their D3D12 probe stays off. The game keeps D3DMetal and disables `atidxx64`.
+    private func applyRedDeadCompanions(rendererFolder: URL?) throws {
+        guard recipe.id == "rdr2", let rendererFolder, let package = rendererPackage, package.usesD3DMetal else { return }
+        let dllPath = rendererFolder.appendingPathComponent("wine").path
+        let sharedPath = rendererFolder.appendingPathComponent("external/libd3dshared.dylib").path
+        for executable in GameFixes.redDeadCompanionExecutables {
+            let graphicsKey = "HKCU\\Software\\Wine\\AppDefaults\\\(executable)\\SiliconCellar"
+            try runWineRegistry(["add", graphicsKey, "/v", "DllPath", "/t", "REG_SZ", "/d", dllPath, "/f"])
+            try runWineRegistry(["add", graphicsKey, "/v", "D3DSharedPath", "/t", "REG_SZ", "/d", sharedPath, "/f"])
+            let overridesKey = "HKCU\\Software\\Wine\\AppDefaults\\\(executable)\\DllOverrides"
+            try runWineRegistry(["add", overridesKey, "/v", "d3d12", "/t", "REG_SZ", "/d", "", "/f"])
+        }
+        try runWineRegistry([
+            "add", "HKCU\\Software\\Wine\\AppDefaults\\RDR2.exe\\DllOverrides",
+            "/v", "atidxx64", "/t", "REG_SZ", "/d", "builtin", "/f",
+        ])
     }
 
     private func appDefaultsKey(section: String) -> String {

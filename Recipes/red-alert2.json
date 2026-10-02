@@ -2,10 +2,14 @@
   "id": "red-alert2",
   "title": "Command & Conquer: Red Alert 2",
   "steamID": "2229850",
+  "launcher": "steam",
   "installFolder": "Command & Conquer Red Alert II",
   "executable": "Ra2.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b;ddraw=n",
+  "renderer": "wine"
 }

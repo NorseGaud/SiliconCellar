@@ -2,10 +2,14 @@
   "id": "spacewar",
   "title": "Spacewar",
   "steamID": "480",
+  "launcher": "steam",
   "installFolder": "Spacewar",
   "executable": "Spacewar.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "wine"
 }

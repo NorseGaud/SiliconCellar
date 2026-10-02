@@ -2,11 +2,15 @@
   "id": "hogwarts-legacy",
   "title": "Hogwarts Legacy",
   "steamID": "990080",
+  "launcher": "steam",
   "installFolder": "Hogwarts Legacy",
   "executable": "HogwartsLegacy.exe",
   "executableRelativePath": "Phoenix/Binaries/Win64/HogwartsLegacy.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }

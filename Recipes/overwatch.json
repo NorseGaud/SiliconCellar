@@ -2,10 +2,14 @@
   "id": "overwatch",
   "title": "Overwatch",
   "steamID": "2357570",
+  "launcher": "steam",
   "installFolder": "Overwatch",
   "executable": "Overwatch.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11=n,b;d3d12=",
+  "renderer": "dxmt"
 }

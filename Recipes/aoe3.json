@@ -2,10 +2,14 @@
   "id": "aoe3",
   "title": "Age of Empires III: Definitive Edition",
   "steamID": "933110",
+  "launcher": "steam",
   "installFolder": "AoE3DE",
   "executable": "AoE3DE_s.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }

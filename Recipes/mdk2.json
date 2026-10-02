@@ -2,16 +2,20 @@
   "id": "mdk2",
   "title": "MDK 2",
   "steamID": "38460",
+  "launcher": "steam",
   "installFolder": "MDK 2",
   "executable": "mdk2Main.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
   "environment": {},
   "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "seedFiles": {
+    "save/config.lua": "chSetVideoMode({displayWidth}, {displayHeight}, 32, 16, 60, 1, 2, 0.8, 0, 1, 0, 0)\nchSndForceSoftwareMode(1)\nchSndDisable(0)\nchUseDisplayLists(0)\n"
+  },
   "directLaunch": true,
   "wineD3DRenderer": "gl",
   "wineVirtualDesktop": "fit",
-  "seedFiles": {
-    "save/config.lua": "chSetVideoMode({displayWidth}, {displayHeight}, 32, 16, 60, 1, 2, 0.8, 0, 1, 0, 0)\nchSndForceSoftwareMode(1)\nchSndDisable(0)\nchUseDisplayLists(0)\n"
-  }
+  "renderer": "wine"
 }

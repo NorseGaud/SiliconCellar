@@ -2,11 +2,17 @@
   "id": "witcher3",
   "title": "The Witcher 3: Wild Hunt — Remastered",
   "steamID": "292030",
+  "launcher": "steam",
   "installFolder": "The Witcher 3",
   "executable": "witcher3.exe",
   "executableRelativePath": "bin/x64_dx12/witcher3.exe",
   "wineWindowsVersion": "win10",
-  "steamArguments": ["-cef-disable-gpu"],
-  "environment": {},
-  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {
+    "FFXPROXY_NO_DPI": "1"
+  },
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "d3dmetal"
 }
