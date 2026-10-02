@@ -1,5 +1,5 @@
-Witcher 3 proxy: tholtman1-del/witcher3-crossover-fix dc6c8f60c48ed08b61400e5b0a7327b5fdba63b1 (MIT).
-Red Alert 2 ddraw: cnc-ddraw-ra2 823fdd1feabec091ab14076181a4a6982a58166b (MIT, FunkyFr3sh).
+Witcher 3 proxy: tholtman1-del/witcher3-crossover-fix dc6c8f60c48ed08b61400e5b0a7327b5fdba63b1 (MIT). See Witcher3/LICENSE.txt.
+Red Alert 2 ddraw: gitTerebi/cnc-ddraw-ra2 823fdd1feabec091ab14076181a4a6982a58166b (MIT, FunkyFr3sh). See RedAlert2/LICENSE.txt.
 Heroes III xdd.dll: cnc-ddraw (MIT, FunkyFr3sh). See Heroes3/LICENSE.txt.
 Company of Heroes 3: Microsoft VC++ 2019 x64 redistributable, SHA-256 pinned in GameFixes.
 Zero Hour online installer: https://cdn.playgenerals.online/GeneralsOnline_setup_092226_QFE2.exe

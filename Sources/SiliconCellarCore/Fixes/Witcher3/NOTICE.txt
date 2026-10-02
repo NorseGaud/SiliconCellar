@@ -1,5 +1,5 @@
 The graphics proxy is built from MIT-licensed source:
 https://github.com/tholtman1-del/witcher3-crossover-fix
 Commit dc6c8f60c48ed08b61400e5b0a7327b5fdba63b1.
-Copyright (c) 2026 tholtman1-del.
+Copyright (c) 2026 tholtman1-del. See LICENSE.txt.
 DPI changes, shader dumping, and FSR stubbing are disabled.
