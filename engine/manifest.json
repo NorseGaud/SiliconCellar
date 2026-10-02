@@ -1,8 +1,8 @@
 {
-  "version": "sc-26.3.0-4",
+  "version": "sc-26.3.0-5",
   "provider": "norsegaud",
   "source_repository": "https://github.com/NorseGaud/wine",
-  "url": "https://github.com/NorseGaud/wine/releases/download/sc-26.3.0-4/siliconcellar-wine-sc-26.3.0-4-x86_64.tar.xz",
-  "sha256": "b4f0d835bf549abf77d4863e1f2cb17f46e424cfb487ac6bb53d0d3ed10fc2c9",
+  "url": "https://github.com/NorseGaud/wine/releases/download/sc-26.3.0-5/siliconcellar-wine-sc-26.3.0-5-x86_64.tar.xz",
+  "sha256": "dc1e22eb525877b860852e6413c6e779750ad6f2a858362cd86ef692ad0acf0b",
   "wine_subdir": "."
 }
