@@ -4,6 +4,19 @@
 
 # Silicon Cellar
 
+[![CI](https://github.com/NorseGaud/SiliconCellar/actions/workflows/ci.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/NorseGaud/SiliconCellar/actions/workflows/codeql.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/codeql.yml)
+[![zizmor](https://github.com/NorseGaud/SiliconCellar/actions/workflows/zizmor.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/zizmor.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NorseGaud/SiliconCellar/badge)](https://scorecard.dev/viewer/?uri=github.com/NorseGaud/SiliconCellar)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/NorseGaud/SiliconCellar)](https://github.com/NorseGaud/SiliconCellar/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NorseGaud/SiliconCellar/total)](https://github.com/NorseGaud/SiliconCellar/releases)
+![macOS 14+ | Apple Silicon](https://img.shields.io/badge/macOS-14%2B%20%7C%20Apple%20Silicon-000000?logo=apple)
+![Swift 5.9+](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)
+[![Wine 11.0](https://img.shields.io/badge/Wine-11.0%20%28CrossOver%2026.3%29-722F37)](https://github.com/NorseGaud/wine/releases)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/NorseGaud?logo=githubsponsors)](https://github.com/sponsors/NorseGaud)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/t2ihlmy2bu)
+
 Run Windows Steam games that you own on Apple Silicon. The app bundles Wine. It does not include game files or a game license.
 
 > **Limited time.** macOS warns that support for Intel-based apps is ending. Silicon Cellar bundles Wine, which still runs as Intel code under Rosetta. Enjoy it while you can.
@@ -181,7 +194,17 @@ The toolkit does not send analytics.
 
 ## Roadmap
 
-- [ ] **Recipe queue.** Add a recipe for each game in [`Recipes/QUEUE.md`](Recipes/QUEUE.md). Mark the line `[x]` after the recipe is tested.
+Add a recipe for each game in [`Recipes/QUEUE.md`](Recipes/QUEUE.md).
+
+## License
+
+Silicon Cellar is free software under the [GNU General Public License v3.0 or later](LICENSE).
+
+Bundled parts keep their own licences:
+
+- The Wine Engine is LGPL-2.1-or-later. Its bundled libraries are LGPL or permissive. Their licence files are in `Contents/Resources/Engine/share/doc`.
+- The game fixes in `Sources/SiliconCellarCore/Fixes` are MIT. Each fix folder has its licence file. See `PROVENANCE.txt`.
+- The renderer packages keep the licences of their inputs. See [NorseGaud/siliconcellar-renderers](https://github.com/NorseGaud/siliconcellar-renderers).
 
 ## Support
 
