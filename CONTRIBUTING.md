@@ -8,6 +8,7 @@ This guide is for local development on Silicon Cellar. For signed release DMGs, 
 - Xcode with Command Line Tools (Swift 5.9+, macOS 14+ SDK)
 - Rosetta (`softwareupdate --install-rosetta --agree-to-license` if it is missing)
 - `git`, `python3`, `curl`, `tar`, and `make`
+- `mingw-w64` (`brew install mingw-w64`) when you package the app with the Engine. `scripts/slim-engine.py` uses its `strip` tools
 - Network access to GitHub when you fetch the Engine
 
 You do **not** need Apple Game Porting Toolkit or a local Wine compile. The app uses a pinned [NorseGaud/wine](https://github.com/NorseGaud/wine/releases) Engine release (Wine 11.0 from the CrossOver 26.3 source with Silicon Cellar fixes).

@@ -47,9 +47,9 @@ That flow:
 1. Lints sources, recipes, and shell scripts
 2. Runs `swift test`
 3. Runs `swift build` (debug)
-4. Refreshes the Wine Engine into `.build/engine` from the pinned NorseGaud/wine release (`FORCE_ENGINE_BUILD=1`), then release `dist/SiliconCellar.app` with `Contents/Resources/Engine`
+4. Refreshes the Wine Engine into `.build/engine` from the pinned NorseGaud/wine release (`FORCE_ENGINE_BUILD=1`), then release `dist/SiliconCellar.app` with `Contents/Resources/Engine`. `scripts/slim-engine.py` removes debug data from the Windows DLLs, GStreamer plugins that Wine does not use, and the dylibs that only those plugins used (about 1.2 GB to 600 MB)
 5. Codesigns every Engine Mach-O (`wine`, `wineserver`, `*.so`, tools) with Wine entitlements, then the nested CLI and the app (hardened runtime + timestamp)
-6. Creates a DMG with the app and an Applications shortcut
+6. Creates an LZMA-compressed (`ULMO`) DMG with the app and an Applications shortcut
 7. Submits the DMG with `notarytool`, waits, staples, and validates
 
 Use `make dist` if you only need the release package steps (app, sign, DMG, notarize).

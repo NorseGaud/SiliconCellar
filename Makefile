@@ -47,6 +47,7 @@ lint:
 	sh -n scripts/build-engine-source.sh
 	sh -n scripts/sign-app.sh
 	sh -n scripts/make-dmg.sh
+	python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/slim-engine.py").read_text())'
 	sh -n scripts/dev.sh
 	sh -n scripts/update-cask.sh
 	sh -n scripts/test-update-cask.sh

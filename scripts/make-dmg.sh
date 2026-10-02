@@ -21,5 +21,5 @@ ln -sf /Applications "$stage/Applications"
 cp -R "$APP" "$stage/SiliconCellar.app"
 
 rm -f "$ROOT"/SiliconCellar-"${version}"-*.dmg
-hdiutil create -fs HFS+ -volname "Silicon Cellar" -srcfolder "$stage" -ov "$dmg"
+hdiutil create -fs HFS+ -format ULMO -volname "Silicon Cellar" -srcfolder "$stage" -ov "$dmg"
 echo "Created $dmg"
