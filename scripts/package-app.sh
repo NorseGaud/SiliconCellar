@@ -45,9 +45,7 @@ elif [ "${SKIP_ENGINE_BUILD:-}" = "1" ]; then
         echo "SKIP_ENGINE_BUILD=1 and Engine missing; packaging without Engine" >&2
     fi
 else
-    if [ "${FORCE_ENGINE_BUILD:-}" = "1" ] || [ ! -x "$ENGINE_SRC/bin/wine" ]; then
-        FORCE_ENGINE_BUILD="${FORCE_ENGINE_BUILD:-}" "$ROOT/scripts/build-wine-engine.sh"
-    fi
+    FORCE_ENGINE_BUILD="${FORCE_ENGINE_BUILD:-}" "$ROOT/scripts/build-wine-engine.sh"
     copy_slim_engine
 fi
 if [ -z "${CI:-}" ] && [ "${SKIP_ENGINE_BUILD:-}" != "1" ]; then

@@ -1,7 +1,8 @@
 #!/bin/sh
-# Fetch the pinned Silicon Cellar Wine Engine release into .build/engine.
+# Fetch the latest Silicon Cellar Wine Engine release into .build/engine.
 #
-# Pin: engine/manifest.json
+# Pin: engine/manifest.json. When the latest release differs from the pin, the pin is rewritten
+# to that release first (commit the change). Offline, the current pin is used.
 # Release source: https://github.com/NorseGaud/wine/releases (built by build/build-engine.sh in that repo)
 # To compile the Engine from source instead, run `make engine-source`.
 #
@@ -19,6 +20,37 @@ MARKER="$PREFIX/.siliconcellar-engine-version"
 if [ ! -f "$MANIFEST" ]; then
     echo "missing $MANIFEST" >&2
     exit 1
+fi
+
+pin_latest_release() {
+    repository="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["source_repository"].removeprefix("https://github.com/"))' "$MANIFEST")"
+    latest_release_json="$(curl -fsSL --max-time 20 --proto '=https' "https://api.github.com/repos/$repository/releases/latest")" || return 1
+    python3 - "$MANIFEST" "$latest_release_json" <<'PY'
+import json, sys
+manifest_path, latest_release_json = sys.argv[1], sys.argv[2]
+manifest = json.load(open(manifest_path))
+release = json.loads(latest_release_json)
+tag = release["tag_name"]
+if tag == manifest["version"]:
+    print(f"Engine pin {tag} is the latest release")
+    sys.exit(0)
+asset_name = f"siliconcellar-wine-{tag}-x86_64.tar.xz"
+asset = next((a for a in release["assets"] if a["name"] == asset_name), None)
+digest = (asset or {}).get("digest") or ""
+if not digest.startswith("sha256:"):
+    sys.exit(f"release {tag} has no {asset_name} with a sha256 digest")
+print(f"Engine release {tag} differs from pin {manifest['version']}; updating {manifest_path}")
+manifest.update(version=tag, url=asset["browser_download_url"], sha256=digest.removeprefix("sha256:"))
+with open(manifest_path, "w") as file:
+    json.dump(manifest, file, indent=2)
+    file.write("\n")
+PY
+}
+
+if [ "${KEEP_ENGINE_PIN:-}" = "1" ]; then
+    echo "KEEP_ENGINE_PIN=1: packaging the Engine pin in $MANIFEST"
+else
+    pin_latest_release || echo "Could not check the latest Engine release; using the current pin" >&2
 fi
 
 eval "$(

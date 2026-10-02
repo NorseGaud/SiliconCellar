@@ -94,6 +94,7 @@ build_app() {
 
 copy_engine() {
     ENGINE_SRC="$ROOT/.build/engine"
+    "$ROOT/scripts/build-wine-engine.sh" || echo "Could not get the latest Engine; using the Engine in $ENGINE_SRC"
     if [ ! -x "$ENGINE_SRC/bin/wine" ]; then
         return 0
     fi

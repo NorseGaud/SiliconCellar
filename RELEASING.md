@@ -2,7 +2,7 @@
 
 Bare `make` (the `all` target) runs lint, tests, a debug build, a **forced** Engine refresh (`make engine` downloads the pinned NorseGaud/wine Engine release), then a Developer ID–signed, notarized, stapled DMG. CI stays unsigned (`make ci` only) and does not download the Engine.
 
-Pin lives in `engine/manifest.json` (NorseGaud/wine release tag, URL + SHA-256). `make engine` sets `FORCE_ENGINE_BUILD=1` so release always refreshes from that pin (archive cache under `.build/engine-cache/` is reused when the hash matches).
+Pin lives in `engine/manifest.json` (NorseGaud/wine release tag, URL + SHA-256). `scripts/build-wine-engine.sh` first moves the pin to the latest NorseGaud/wine release if the two differ, so commit `engine/manifest.json` after a new Engine release (`make release` stops on uncommitted changes). `make release` asks before it packages when that release differs from the local pin (or when GitHub cannot be read). Answer yes to package the local pin. Otherwise stop and run `make engine`, then commit `engine/manifest.json`. `make engine` sets `FORCE_ENGINE_BUILD=1` so release always refreshes from that pin (archive cache under `.build/engine-cache/` is reused when the hash matches).
 
 ## Version
 
@@ -47,7 +47,7 @@ That flow:
 1. Lints sources, recipes, and shell scripts
 2. Runs `swift test`
 3. Runs `swift build` (debug)
-4. Refreshes the Wine Engine into `.build/engine` from the pinned NorseGaud/wine release (`FORCE_ENGINE_BUILD=1`), then release `dist/SiliconCellar.app` with `Contents/Resources/Engine`. `scripts/slim-engine.py` removes debug data from the Windows DLLs, GStreamer plugins that Wine does not use, and the dylibs that only those plugins used (about 1.2 GB to 600 MB)
+4. Pins the latest NorseGaud/wine release and refreshes the Wine Engine into `.build/engine` from it (`FORCE_ENGINE_BUILD=1`), then release `dist/SiliconCellar.app` with `Contents/Resources/Engine`. `scripts/slim-engine.py` removes debug data from the Windows DLLs, GStreamer plugins that Wine does not use, and the dylibs that only those plugins used (about 1.2 GB to 600 MB)
 5. Codesigns every Engine Mach-O (`wine`, `wineserver`, `*.so`, tools) with Wine entitlements, then the nested CLI and the app (hardened runtime + timestamp)
 6. Creates an LZMA-compressed (`ULMO`) DMG with the app and an Applications shortcut
 7. Submits the DMG with `notarytool`, waits, staples, and validates

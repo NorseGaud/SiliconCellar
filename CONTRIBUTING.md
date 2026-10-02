@@ -57,11 +57,11 @@ make dev
 
 This builds SiliconCellar, wraps it in `.build/dev/SiliconCellar.app`, opens the window, and rebuilds after you save Swift or recipe files. Stop with Ctrl+C. It is a full rebuild, not hot reload.
 
-If `.build/engine/bin/wine` exists, `make dev` copies that Engine into the dev app. Without it, the UI may report that the game runtime is missing until you fetch the Engine (below).
+At start, `make dev` checks the latest [NorseGaud/wine](https://github.com/NorseGaud/wine/releases) release, gets it if it differs from `.build/engine` (below), then copies `.build/engine` into the dev app. Offline, it uses the Engine that `.build/engine` already has. File-change reloads keep the Engine that is in the dev app.
 
 ## Wine Engine (first playable package)
 
-The release app ships Wine at `Contents/Resources/Engine/`. Fetch the pinned release once:
+The release app ships Wine at `Contents/Resources/Engine/`. Fetch the latest release:
 
 ```sh
 ./scripts/build-wine-engine.sh
@@ -70,7 +70,9 @@ The release app ships Wine at `Contents/Resources/Engine/`. Fetch the pinned rel
 
 Pin: `engine/manifest.json` (tag, URL and SHA-256 for `siliconcellar-wine-*-x86_64.tar.xz`). Output: `.build/engine/` (not committed). The binary is x86_64 and needs Rosetta.
 
-To compile the same tag yourself, run `make engine-source`. It clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs `build/build-engine.sh` from that repo. That takes hours and needs x86_64 Homebrew in `/usr/local` (see `build/README.md` in the Wine repo). To change the Wine fixes, work in the Wine repo, push a new `sc-*` tag, and pin the new release in `engine/manifest.json`.
+Each run asks the GitHub API for the latest NorseGaud/wine release. If its tag differs from the pin, the script writes the new tag, URL and SHA-256 (from the release asset digest) into `engine/manifest.json`, then downloads and checks the archive. Commit the changed `engine/manifest.json`. If GitHub is not available, the script uses the current pin.
+
+To compile the same tag yourself, run `make engine-source`. It clones [NorseGaud/wine](https://github.com/NorseGaud/wine) into `.build/wine-src` and runs `build/build-engine.sh` from that repo. That takes hours and needs x86_64 Homebrew in `/usr/local` (see `build/README.md` in the Wine repo). To change the Wine fixes, work in the Wine repo, push a new `sc-*` tag, and publish its release. The next `make engine`, `make app` or `make dev` pins it.
 
 Then package an unsigned app for local play:
 
@@ -79,7 +81,7 @@ make app
 open dist/SiliconCellar.app
 ```
 
-`make app` reuses `.build/engine` when the pin marker matches. Set `SKIP_ENGINE_BUILD=1` to package without Engine (for layout checks only). CI never downloads the Engine.
+`make app` reuses `.build/engine` when it matches the latest release. Set `SKIP_ENGINE_BUILD=1` to package without Engine (for layout checks only). CI never downloads the Engine.
 
 ## Full local release (optional)
 
@@ -87,8 +89,8 @@ Bare `make` runs lint, test, debug build, a **fresh** Wine Engine (`make engine`
 
 | Command | Engine |
 |---------|--------|
-| `make` / `make engine` | Always re-fetches Engine (`FORCE_ENGINE_BUILD=1`) |
-| `make app` | Fetches Engine only if missing or pin differs |
+| `make` / `make engine` | Pins the latest release, then always re-fetches Engine (`FORCE_ENGINE_BUILD=1`) |
+| `make app` / `make dev` | Pins the latest release, then fetches Engine only if missing or different |
 | `make ci` | Skips Engine download |
 
 For unsigned packaging only, use `make app` or `make ci`.
