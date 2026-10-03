@@ -171,11 +171,19 @@ siliconcellar stop --game spacewar
 siliconcellar accept-apple-license
 ```
 
-Optional: `--data-root PATH`, `--recipes PATH`, `SILICONCELLAR_WINE`, `SILICONCELLAR_RECIPES`.
+Optional: `--data-root PATH`, `--recipes PATH`, `SILICONCELLAR_WINE`, `SILICONCELLAR_RECIPES`. `--data-root` uses the folder you pass. See [Storage](#storage).
 
 Each launcher has its own Wine prefix: `prefix` for Steam, `prefix-battlenet` for Battle.net, and `prefix-rsi` for the RSI Launcher. All games of a launcher share its prefix, so a problem in one launcher cannot break the other. The launchers can run at the same time. **Stop** and `stop` close only the launcher of the selected game. Each launcher runs one install or launch at a time. Setup deletes leftover `Games/` and `SteamCMD/` folders from older Silicon Cellar builds. Recipes stay.
 
-The default location is `~/Library/Application Support/SiliconCellar`. **Storage** in the app can put the prefixes on another APFS or ExFAT drive. The app keeps a record of that drive on this Mac. Wine and recipes stay on this Mac. On ExFAT, the games live in a disk image so Wine links keep working. Connect the same drive before you play. `--data-root` still uses the path you pass.
+## Storage
+
+Choose **Storage: This Mac** in the window, or choose **Storage…** in the app menu.
+
+<p align="center">
+  <img src="images/storage.png" alt="Storage sheet with This Mac selected" width="520">
+</p>
+
+The default folder is `~/Library/Application Support/SiliconCellar`. You can keep the launcher prefixes on this Mac or on another APFS or ExFAT drive. The app records that drive on this Mac. Wine and recipes stay on this Mac. On an ExFAT drive, the games stay in a disk image, so Wine links keep working. Connect that drive before you play.
 
 ## Flow
 

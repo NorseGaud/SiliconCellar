@@ -23,7 +23,9 @@ func printUsage() {
           steam             Open the launcher window
           logout            Clear the local launcher sign-in if the launcher is not running
           install           Start the install in the launcher
-          uninstall         Start the uninstall in the launcher
+          uninstall         Start the uninstall of the game in the launcher
+          uninstall-launcher
+                            Remove the RSI Launcher program. The game files stay.
           play              Launch the game through the launcher
           stop              Stop the game, or stop the launcher
           accept-apple-license

@@ -758,10 +758,17 @@ struct LibraryView: View {
     @ViewBuilder
     private func actionSteps(includeGame: Bool, title: String?) -> some View {
         let launcherName = model.launcherName
+        let showsLauncherUninstall = model.selected?.launcherKind == .rsi
+        let launcherMissing = showsLauncherUninstall
+            ? !model.snapshot.launcherClientInstalled
+            : model.snapshot.needsSetup
+        let signInNumber = showsLauncherUninstall ? 3 : 2
+        let gameNumber = signInNumber + 1
+        let playNumber = gameNumber + 1
         Text("Do these steps in order.")
             .font(.title3)
             .foregroundStyle(.secondary)
-        if model.snapshot.needsSetup {
+        if launcherMissing {
             Text(
                 title.map {
                     "Install the \(launcherName) client for \($0)."
@@ -787,7 +794,7 @@ struct LibraryView: View {
                 .foregroundStyle(.secondary)
         }
 
-        let launcherInstalled = !model.snapshot.needsSetup
+        let launcherInstalled = !launcherMissing
         let sessionLive = model.snapshot.wineSessionLive
         let launcherUp = model.launcherIsUpStable
         let launcherActionBusy = model.busy && ["steam", "setup"].contains(model.activity)
@@ -795,7 +802,85 @@ struct LibraryView: View {
         let launcherStarting = (sessionLive || launcherActionBusy) && !launcherUp
         let signedIn = model.snapshot.isSignedIn
 
-        if model.snapshot.needsSetup {
+        if showsLauncherUninstall {
+            if model.busy && model.activity == "setup" {
+                splitStep(
+                    1,
+                    status: "Installing \(launcherName)…",
+                    done: false,
+                    actionTitle: "Stop \(launcherName) Installer",
+                    actionColor: StepColor.danger,
+                    enabled: true
+                ) {
+                    model.stopLauncherSession()
+                }
+            } else if model.busy && model.activity == "uninstall-launcher" {
+                splitStep(
+                    1,
+                    status: "Uninstalling the RSI Launcher…",
+                    done: false,
+                    actionTitle: "Uninstall \(launcherName)",
+                    actionColor: StepColor.danger,
+                    enabled: false
+                ) {}
+            } else if launcherMissing {
+                splitStep(
+                    1,
+                    status: "\(launcherName) is not installed",
+                    done: false,
+                    actionTitle: "Install \(launcherName)",
+                    actionColor: StepColor.setup,
+                    enabled: model.backgroundReady
+                ) {
+                    model.run(.setup)
+                }
+            } else {
+                splitStep(
+                    1,
+                    status: "\(launcherName) is installed",
+                    done: true,
+                    actionTitle: "Uninstall \(launcherName)",
+                    actionColor: StepColor.danger,
+                    enabled: model.backgroundReady
+                ) {
+                    model.run(.uninstallLauncher)
+                }
+            }
+            if launcherUp {
+                splitStep(
+                    2,
+                    status: "\(launcherName) is running",
+                    done: true,
+                    actionTitle: "Stop \(launcherName)",
+                    actionColor: StepColor.danger,
+                    enabled: true
+                ) {
+                    model.stopLauncherSession()
+                }
+            } else if launcherStarting && model.activity != "setup" {
+                splitStep(
+                    2,
+                    status: "\(launcherName) is starting…",
+                    done: false,
+                    actionTitle: "Stop \(launcherName)",
+                    actionColor: StepColor.danger,
+                    enabled: true
+                ) {
+                    model.stopLauncherSession()
+                }
+            } else {
+                splitStep(
+                    2,
+                    status: launcherMissing ? "Not started" : "Ready to start",
+                    done: false,
+                    actionTitle: "Start \(launcherName)",
+                    actionColor: StepColor.setup,
+                    enabled: launcherInstalled && model.backgroundReady
+                ) {
+                    model.run(.steam)
+                }
+            }
+        } else if launcherMissing {
             if model.busy && model.activity == "setup" {
                 splitStep(
                     1,
@@ -856,7 +941,7 @@ struct LibraryView: View {
 
         if signedIn {
             splitStep(
-                2,
+                signInNumber,
                 status: "Signed in",
                 done: true,
                 actionTitle: "Sign out of \(launcherName)",
@@ -867,7 +952,7 @@ struct LibraryView: View {
             }
         } else {
             splitStep(
-                2,
+                signInNumber,
                 status: "Not signed in",
                 done: false,
                 actionTitle: "Sign in",
@@ -882,7 +967,7 @@ struct LibraryView: View {
             if model.installInProgress || model.snapshot.stage == .downloading {
                 // Stop ends the launcher session and cancels the install — not a running game.
                 splitStep(
-                    3,
+                    gameNumber,
                     status: "Installing…",
                     done: false,
                     actionTitle: "Cancel install",
@@ -892,7 +977,7 @@ struct LibraryView: View {
                     model.run(.stop)
                 }
                 splitStep(
-                    4,
+                    playNumber,
                     status: "Not ready to play",
                     done: false,
                     actionTitle: "Play",
@@ -901,7 +986,7 @@ struct LibraryView: View {
                 ) {}
             } else if model.uninstallInProgress {
                 splitStep(
-                    3,
+                    gameNumber,
                     status: "Uninstalling…",
                     done: false,
                     actionTitle: "Uninstall",
@@ -909,7 +994,7 @@ struct LibraryView: View {
                     enabled: false
                 ) {}
                 splitStep(
-                    4,
+                    playNumber,
                     status: "Not ready to play",
                     done: false,
                     actionTitle: "Play",
@@ -918,7 +1003,7 @@ struct LibraryView: View {
                 ) {}
             } else if model.snapshot.isInstalled {
                 splitStep(
-                    3,
+                    gameNumber,
                     status: "Game is installed",
                     done: true,
                     actionTitle: "Uninstall",
@@ -929,7 +1014,7 @@ struct LibraryView: View {
                 }
                 if model.snapshot.isRunning {
                     splitStep(
-                        4,
+                        playNumber,
                         status: "Game is running",
                         done: true,
                         actionTitle: "Stop",
@@ -940,7 +1025,7 @@ struct LibraryView: View {
                     }
                 } else {
                     splitStep(
-                        4,
+                        playNumber,
                         status: launcherUp ? "Ready to play" : "Start \(launcherName) to play",
                         done: false,
                         actionTitle: "Play",
@@ -961,7 +1046,7 @@ struct LibraryView: View {
                             ? "Sign in before you install"
                             : "Start \(launcherName) before you install"
                 splitStep(
-                    3,
+                    gameNumber,
                     status: installHint,
                     done: false,
                     actionTitle: "Install game",
@@ -972,7 +1057,7 @@ struct LibraryView: View {
                 }
                 // Stop Steam stays on step 1. Step 4 is play readiness only.
                 splitStep(
-                    4,
+                    playNumber,
                     status: "Not ready to play",
                     done: false,
                     actionTitle: "Play",
@@ -1011,7 +1096,7 @@ struct LibraryView: View {
 
     private static let stepFont = Font.title2.weight(.semibold)
     /// Keeps every action label the same width and the same font size.
-    private static let widestActionTitle = "Sign out of RSI Launcher"
+    private static let widestActionTitle = "Stop RSI Launcher Installer"
 
     private func splitStep(
         _ number: Int,

@@ -28,7 +28,7 @@ extension RuntimeTests {
     func writeRSICookies(_ env: Environment) throws {
         let cookies = env.runtime.rsiProfile.appendingPathComponent("Network/Cookies")
         try FileManager.default.createDirectory(at: cookies.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("session".utf8).write(to: cookies)
+        try Data(Runtime.rsiSessionCookieName.utf8).write(to: cookies)
     }
 
     func testRSISetupInstallsThePinnedClient() throws {
@@ -38,6 +38,13 @@ extension RuntimeTests {
         XCTAssertTrue(env.commands.ran.contains { $0.name == "curl" && $0.arguments.contains(RSIInstaller.downloadURL) })
         let installerStart = try XCTUnwrap(env.commands.started.first { $0.1.first?.hasSuffix(RSIInstaller.launchFileName) == true })
         XCTAssertEqual(Array(installerStart.1.dropFirst()), ["/D=\(RSIInstaller.windowsInstallPath)"])
+        XCTAssertTrue(env.commands.ran.contains {
+            $0.arguments.contains("Debugger") && $0.arguments.contains(#"C:\windows\system32\cmd.exe /c exit"#)
+        })
+        XCTAssertTrue(env.commands.ran.contains {
+            $0.arguments.contains("HKCU\\Software\\Microsoft\\Installer\\Products\\0D741DA1E0EBC6D3CA11466FCD14361F")
+        })
+        XCTAssertTrue(env.sink.messages.contains("The RSI Launcher does not need the .NET Framework download. Setup skips it."))
         XCTAssertEqual(
             env.commands.started.last?.1,
             [try XCTUnwrap(env.runtime.rsiClient).path, "--in-process-gpu"]
@@ -45,6 +52,25 @@ extension RuntimeTests {
         XCTAssertEqual(env.frontmost.namedWindows.first?.1, RSIInstaller.windowTitle)
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .signIn)
         XCTAssertEqual(env.runtime.prefix.lastPathComponent, "prefix-rsi")
+    }
+
+    func testRSISetupHidesTheWinePowerShellStub() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let stubs = ["system32", "syswow64"].map {
+            env.runtime.prefix.appendingPathComponent("drive_c/windows/\($0)/WindowsPowerShell/v1.0/powershell.exe")
+        }
+        for stub in stubs {
+            try FileManager.default.createDirectory(at: stub.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("stub".utf8).write(to: stub)
+        }
+        try env.runtime.setup()
+        XCTAssertEqual(env.commands.powershellStubVisibleAtRSIInstallStart, false)
+        for stub in stubs {
+            XCTAssertEqual(try String(contentsOf: stub, encoding: .utf8), "stub")
+            let parked = stub.deletingLastPathComponent().appendingPathComponent("powershell.exe.siliconcellar")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: parked.path))
+        }
     }
 
     func testRSIProcessesSimulateWriteCopy() throws {
@@ -137,11 +163,49 @@ extension RuntimeTests {
         XCTAssertFalse(env.runtime.isSignedIn)
     }
 
+    func testRSICookieFileWithoutTheSessionCookieIsNotASignIn() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let cookies = env.runtime.rsiProfile.appendingPathComponent("Network/Cookies")
+        try FileManager.default.createDirectory(at: cookies.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("SQLite format 3".utf8).write(to: cookies)
+        XCTAssertFalse(env.runtime.isSignedIn)
+        XCTAssertEqual(env.runtime.fileSnapshot().stage, .setup)
+    }
+
+    func testRSIUninstallRemovesTheLauncherAndKeepsTheGame() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        try writeRSICookies(env)
+        let game = try XCTUnwrap(env.runtime.game)
+        try FileManager.default.createDirectory(at: game.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("game".utf8).write(to: game)
+        try env.runtime.uninstallLauncher()
+        XCTAssertNil(env.runtime.rsiClient)
+        XCTAssertFalse(env.runtime.isSignedIn)
+        XCTAssertTrue(env.runtime.isGameInstalled)
+        XCTAssertFalse(env.runtime.fileSnapshot().launcherClientInstalled)
+        XCTAssertEqual(env.runtime.fileSnapshot().stage, .ready)
+        XCTAssertTrue(env.commands.ran.contains { $0.name == "wineserver" && $0.arguments == ["-k"] })
+        XCTAssertTrue(env.sink.messages.contains("The RSI Launcher is uninstalled. The game files stay."))
+    }
+
     func testRSIProcessDetection() {
         XCTAssertTrue(RSIProcess.isClientRunning(in: "C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe\n"))
         XCTAssertFalse(RSIProcess.isClientRunning(in: "/bin/zsh -c open RSI Launcher.exe\n"))
         XCTAssertFalse(RSIProcess.isClientRunning(in: "/tmp/downloads/rsi-setup-2.17.0.exe\n"))
         XCTAssertTrue(RSIProcess.isInstallerRunning(in: "/tmp/downloads/rsi-setup-2.17.0.exe\n"))
         XCTAssertTrue(RSIProcess.isInstallerRunning(in: "/tmp/downloads/RSI Launcher-Setup-2.17.0.exe\n"))
+        XCTAssertTrue(RSIProcess.isInstallerRunning(in: "winedbg --auto 12 34\n"))
+        XCTAssertFalse(RSIProcess.isInstallerRunning(in: "/bin/ps\n"))
+    }
+
+    func testDownloadProgressLineShowsMegabytes() {
+        XCTAssertNil(DownloadProgressText.line(label: "Downloading…", size: 1_000_000, totalBytes: RSIInstaller.byteCount))
+        XCTAssertEqual(
+            DownloadProgressText.line(label: "Downloading…", size: 80_000_000, totalBytes: RSIInstaller.byteCount),
+            "Downloading… 80 MB of 343 MB (23%)"
+        )
     }
 }

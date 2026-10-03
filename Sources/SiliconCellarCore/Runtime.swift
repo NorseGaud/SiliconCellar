@@ -228,6 +228,7 @@ public final class Runtime: @unchecked Sendable {
             launcherReady: launcherReady,
             launcherWindowVisible: launcherWindowVisible,
             gameRunning: gameRunning,
+            launcherClientInstalled: isLauncherClientInstalled,
             now: now,
             files: files
         )
@@ -469,6 +470,15 @@ public final class Runtime: @unchecked Sendable {
         try waitForUninstall()
         try removeInstalledGameFiles()
         sink.say("Removed \(recipe.title) from this Steam library.")
+    }
+
+    /// Removes the launcher program. The game files stay.
+    public func uninstallLauncher() throws {
+        switch recipe.launcherKind {
+        case .rsi: try uninstallRSILauncher()
+        case .steam, .battleNet:
+            throw PortError("Choose Uninstall to remove \(recipe.title). \(launcherName) stays installed.")
+        }
     }
 
     public func playGame() throws {
@@ -1074,6 +1084,7 @@ public final class Runtime: @unchecked Sendable {
         expected: String,
         progress: String,
         mismatch: String,
+        bytes: Int? = nil,
         timeout: TimeInterval = 600
     ) throws -> URL {
         let destination = downloads.appendingPathComponent(name)
@@ -1084,6 +1095,9 @@ public final class Runtime: @unchecked Sendable {
         try files.createDirectory(downloads)
         let partial = destination.appendingPathExtension("partial")
         if files.fileExists(partial) { try files.removeItem(partial) }
+        let reporter = PinnedDownloadProgress(sink: sink, file: partial, label: progress, totalBytes: bytes)
+        reporter.start()
+        defer { reporter.stop() }
         try commands.run(
             executable: URL(fileURLWithPath: "/usr/bin/curl"),
             arguments: [
@@ -1104,7 +1118,67 @@ public final class Runtime: @unchecked Sendable {
         try files.moveItem(from: partial, to: destination)
         return destination
     }
+}
 
+/// One log line while a pinned file downloads. Nil until the file has moved enough to report.
+enum DownloadProgressText {
+    static func line(label: String, size: Int, totalBytes: Int?) -> String? {
+        guard size > 0 else { return nil }
+        if let totalBytes, totalBytes > 0 {
+            let percent = min(99, size * 100 / totalBytes)
+            guard percent >= 5 else { return nil }
+            let done = size / 1_000_000
+            let total = (totalBytes + 999_999) / 1_000_000
+            return "\(label) \(done) MB of \(total) MB (\(percent)%)"
+        }
+        let megabytes = size / 1_000_000
+        guard megabytes >= 20 else { return nil }
+        return "\(label) \(megabytes) MB"
+    }
+}
+
+private final class PinnedDownloadProgress: @unchecked Sendable {
+    private let sink: StatusSink
+    private let file: URL
+    private let label: String
+    private let totalBytes: Int?
+    private let lock = NSLock()
+    private var lastLine = ""
+    private var source: DispatchSourceTimer?
+
+    init(sink: StatusSink, file: URL, label: String, totalBytes: Int?) {
+        self.sink = sink
+        self.file = file
+        self.label = label
+        self.totalBytes = totalBytes
+    }
+
+    func start() {
+        let source = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        source.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1))
+        source.setEventHandler { [weak self] in self?.tick() }
+        self.source = source
+        source.resume()
+    }
+
+    func stop() {
+        source?.cancel()
+        source = nil
+    }
+
+    private func tick() {
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+        guard let text = DownloadProgressText.line(label: label, size: size, totalBytes: totalBytes) else { return }
+        lock.lock()
+        let changed = text != lastLine
+        if changed { lastLine = text }
+        lock.unlock()
+        guard changed else { return }
+        sink.say(text)
+    }
+}
+
+extension Runtime {
     static let requiredSteamArguments = [
         "-nofriendsui",
         "-nochatui",
@@ -1205,6 +1279,7 @@ public enum LibraryAction: String, Sendable {
     case stop
     case logout
     case uninstall
+    case uninstallLauncher = "uninstall-launcher"
     case acceptAppleLicense = "accept-apple-license"
 }
 
@@ -1323,6 +1398,7 @@ public struct Library: @unchecked Sendable {
             case .steam: try selected.openLauncher()
             case .install: try selected.installGame()
             case .uninstall: try selected.uninstallGame()
+            case .uninstallLauncher: try selected.uninstallLauncher()
             case .play: try selected.playGame()
             case .stop: try selected.stopGameOrSession()
             case .logout: try selected.logout()

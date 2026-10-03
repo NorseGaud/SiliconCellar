@@ -22,6 +22,8 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
     var leaveRSIInstallerUnfinished = false
     var finishRSIInstallOnStart = false
     var finishRSIUninstallOnStart = false
+    /// Set when the RSI installer starts. True when a Wine PowerShell stub was still in place.
+    var powershellStubVisibleAtRSIInstallStart: Bool?
     var installSeed = InstallSeed.standard
     var steamClient: FakeSteamClient?
 
@@ -146,10 +148,17 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
 
     private func fakeRSI(arguments: [String], prefix: URL) throws {
         let programFiles = prefix.appendingPathComponent("drive_c/Program Files")
+        if arguments.first?.hasSuffix(RSIInstaller.launchFileName) == true {
+            let stubs = ["system32", "syswow64"].map {
+                prefix.appendingPathComponent("drive_c/windows/\($0)/WindowsPowerShell/v1.0/powershell.exe")
+            }
+            powershellStubVisibleAtRSIInstallStart = stubs.contains { FileManager.default.fileExists(atPath: $0.path) }
+        }
         if arguments.first?.hasSuffix(RSIInstaller.launchFileName) == true, !leaveRSIInstallerUnfinished {
-            let client = programFiles.appendingPathComponent("Roberts Space Industries/RSI Launcher/RSI Launcher.exe")
-            try FileManager.default.createDirectory(at: client.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data("rsi".utf8).write(to: client)
+            let folder = programFiles.appendingPathComponent("Roberts Space Industries/RSI Launcher")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("rsi".utf8).write(to: folder.appendingPathComponent(RSIInstaller.clientFileName))
+            try Data("uninstall".utf8).write(to: folder.appendingPathComponent(RSIInstaller.uninstallerFileName))
         }
         guard arguments.contains(where: { $0.hasSuffix("RSI Launcher.exe") }) else { return }
         let game = programFiles.appendingPathComponent("Roberts Space Industries/StarCitizen/LIVE/Bin64/StarCitizen.exe")

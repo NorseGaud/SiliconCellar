@@ -36,6 +36,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
     /// A Wine/Steam window is on screen (not only processes).
     public var launcherWindowVisible: Bool
     public var gameRunning: Bool
+    /// The launcher program is on disk. A game can be installed after the launcher is removed.
+    public var launcherClientInstalled: Bool
 
     public init(
         stage: GameStage,
@@ -43,7 +45,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
         wineSessionLive: Bool = false,
         launcherReady: Bool = false,
         launcherWindowVisible: Bool = false,
-        gameRunning: Bool = false
+        gameRunning: Bool = false,
+        launcherClientInstalled: Bool = false
     ) {
         self.stage = stage
         self.downloadFraction = downloadFraction
@@ -51,6 +54,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
         self.launcherReady = launcherReady
         self.launcherWindowVisible = launcherWindowVisible
         self.gameRunning = gameRunning
+        self.launcherClientInstalled = launcherClientInstalled
     }
 
     public var needsSetup: Bool { stage == .setup }
@@ -72,7 +76,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 wineSessionLive: snapshot.wineSessionLive,
                 launcherReady: snapshot.launcherReady,
                 launcherWindowVisible: snapshot.launcherWindowVisible,
-                gameRunning: false
+                gameRunning: false,
+                launcherClientInstalled: snapshot.launcherClientInstalled
             )
         }
         if activity == "uninstall" {
@@ -81,7 +86,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 wineSessionLive: snapshot.wineSessionLive,
                 launcherReady: snapshot.launcherReady,
                 launcherWindowVisible: snapshot.launcherWindowVisible,
-                gameRunning: false
+                gameRunning: false,
+                launcherClientInstalled: snapshot.launcherClientInstalled
             )
         }
         return snapshot
@@ -101,6 +107,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
         launcherReady: Bool = false,
         launcherWindowVisible: Bool = false,
         gameRunning: Bool = false,
+        launcherClientInstalled: Bool = false,
         now: Date = Date(),
         files: FileSystem = FoundationFileSystem()
     ) -> LibrarySnapshot {
@@ -115,7 +122,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 wineSessionLive: wineSessionLive,
                 launcherReady: launcherReady,
                 launcherWindowVisible: launcherWindowVisible,
-                gameRunning: gameRunning
+                gameRunning: gameRunning,
+                launcherClientInstalled: launcherClientInstalled
             )
         }
         guard runtimeReady || signedIn else {
@@ -123,7 +131,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .setup,
                 wineSessionLive: wineSessionLive,
                 launcherReady: launcherReady,
-                launcherWindowVisible: launcherWindowVisible
+                launcherWindowVisible: launcherWindowVisible,
+                launcherClientInstalled: launcherClientInstalled
             )
         }
         if flags != 4 && total > 0 {
@@ -142,7 +151,8 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 downloadFraction: fraction,
                 wineSessionLive: wineSessionLive,
                 launcherReady: launcherReady,
-                launcherWindowVisible: launcherWindowVisible
+                launcherWindowVisible: launcherWindowVisible,
+                launcherClientInstalled: launcherClientInstalled
             )
         }
         if signedIn {
@@ -150,14 +160,16 @@ public struct LibrarySnapshot: Equatable, Sendable {
                 stage: .install,
                 wineSessionLive: wineSessionLive,
                 launcherReady: launcherReady,
-                launcherWindowVisible: launcherWindowVisible
+                launcherWindowVisible: launcherWindowVisible,
+                launcherClientInstalled: launcherClientInstalled
             )
         }
         return LibrarySnapshot(
             stage: .signIn,
             wineSessionLive: wineSessionLive,
             launcherReady: launcherReady,
-            launcherWindowVisible: launcherWindowVisible
+            launcherWindowVisible: launcherWindowVisible,
+            launcherClientInstalled: launcherClientInstalled
         )
     }
 }
