@@ -168,7 +168,7 @@ final class RecipeStoreTests: XCTestCase {
             "spacewar", "aoe4", "aoe2", "aoe3", "coh3", "cs2", "zero-hour", "red-alert2",
             "overwatch", "diablo4", "poe2", "hogwarts-legacy", "skyrim-se",
             "san-andreas-de", "heroes3", "elden-ring", "aom-retold", "mdk", "mdk2",
-            "witcher3", "d2r", "rdr2", "aoe2-hd", "aoe3-2007",
+            "witcher3", "d2r", "rdr2", "aoe2-hd", "aoe3-2007", "assassins-creed",
         ]
         XCTAssertEqual(ids, Set(expected))
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.steamID, "38450")
@@ -205,6 +205,10 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "aoe2-hd" }?.launchExecutableArguments, ["SKIPINTRO"])
         XCTAssertEqual(recipes.first { $0.id == "aoe3-2007" }?.steamID, "105450")
         XCTAssertEqual(recipes.first { $0.id == "aoe3-2007" }?.gameRelativePath, "bin/age3.exe")
+        XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.steamID, "15100")
+        XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.executable, "AssassinsCreed_Dx9.exe")
+        XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.launchesDirectly, true)
+        XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.installFolder, "Assassins Creed")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.steamID, "38460")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.executable, "mdk2Main.exe")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.launchesDirectly, true)

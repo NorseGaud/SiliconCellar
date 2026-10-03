@@ -52,6 +52,7 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 - [ ] [Age of Empires III: Definitive Edition](Recipes/aoe3.json)
 - [ ] [Age of Empires IV](Recipes/aoe4.json)
 - [ ] [Age of Mythology: Retold](Recipes/aom-retold.json)
+- [ ] [Assassin's Creed](Recipes/assassins-creed.json)
 - [ ] [Command & Conquer: Generals Zero Hour](Recipes/zero-hour.json)
 - [ ] [Command & Conquer: Red Alert 2](Recipes/red-alert2.json)
 - [ ] [Company of Heroes 3](Recipes/coh3.json)

@@ -1,0 +1,16 @@
+{
+  "id": "assassins-creed",
+  "title": "Assassin's Creed",
+  "steamID": "15100",
+  "launcher": "steam",
+  "installFolder": "Assassins Creed",
+  "executable": "AssassinsCreed_Dx9.exe",
+  "directLaunch": true,
+  "wineWindowsVersion": "win10",
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "wine"
+}
