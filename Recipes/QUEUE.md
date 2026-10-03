@@ -4,9 +4,9 @@ These 78 games are in the NorseGaud Steam account. They do not have a recipe and
 
 For each game, make `Recipes/<id>.json` (see [Add a game](../README.md#add-a-game)), test it, and then change `[ ]` to `[x]`. The first executable is the default Steam launch option. The other executables are alternative launch options.
 
-- [x] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`
-- [ ] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`
-- [ ] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`
+- [x] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`. The recipe starts `AoK HD.exe` directly, passes `SKIPINTRO`, and writes `steam_appid.txt` for app `221380`.
+- [x] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`. The recipe starts `bin/age3.exe`. Play unpacks `mfc42.dll` beside that executable so the CD-key check can load.
+- [x] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`. The recipe starts `AssassinsCreed_Dx9.exe` directly. It uses DirectX 9. It does not use DirectX 10.
 - [ ] **BRINK**: Steam ID `22350`, install folder `BRINK`, executable `brink.exe`
 - [ ] **Brothers - A Tale of Two Sons**: Steam ID `225080`, install folder `Brothers - A Tale of Two Sons`, executable `Binaries/Win32/Brothers.exe`, `Binaries/Win32/BrothersLauncher.exe`
 - [ ] **Call of Duty: Modern Warfare 2 (2009) - Multiplayer**: Steam ID `10190`, install folder `Call of Duty Modern Warfare 2`, executable `iw4mp.exe`
