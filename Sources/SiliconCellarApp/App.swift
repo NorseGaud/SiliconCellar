@@ -89,6 +89,7 @@ final class LibraryModel: ObservableObject {
     private var gameWasRunning = false
     /// True from the click until `library.perform` returns. Stop can end `busy` only when this is false.
     private var actionInFlight = false
+    private var interactions = GameInteractions.load(url: AppPaths.gameInteractions())
 
     var selected: Recipe? { recipes.first { $0.id == selectedID } }
     /// The launcher of the selected game. Steam when no game is selected (onboarding).
@@ -151,6 +152,7 @@ final class LibraryModel: ObservableObject {
                 .appendingPathComponent("Contents/MacOS")
             let store = RecipeStore.standard(executableDirectory: executableDirectory)
             recipes = try store.loadAll()
+            sortGameList()
             selectedID = nil
             refreshHost()
             if let library { recipes = recipes.map(library.applyingLauncherChoice) }
@@ -270,11 +272,24 @@ final class LibraryModel: ObservableObject {
     }
 
     func handleSelectionChange() {
+        noteGameInteraction(selectedID)
         error = nil
         detailStatusReady = false
         applySelectedFileStatus()
         refresh()
         refreshInstalled()
+    }
+
+    /// Installed games stay at the top. The latest selection or action is first in each group.
+    private func sortGameList() {
+        recipes = GameListOrder.sorted(recipes, installed: installedIDs, interactions: interactions.times)
+    }
+
+    private func noteGameInteraction(_ id: String?) {
+        guard let id, recipes.contains(where: { $0.id == id }) else { return }
+        interactions.note(id, at: Date())
+        try? interactions.save(url: AppPaths.gameInteractions())
+        sortGameList()
     }
 
     func refresh() {
@@ -353,7 +368,10 @@ final class LibraryModel: ObservableObject {
                 }
             )
             DispatchQueue.main.async {
-                if self.installedIDs != ids { self.installedIDs = ids }
+                if self.installedIDs != ids {
+                    self.installedIDs = ids
+                    self.sortGameList()
+                }
                 if let id = self.selectedID, ids.contains(id), !self.snapshot.isInstalled {
                     self.applySelectedFileStatus()
                 }
@@ -398,6 +416,7 @@ final class LibraryModel: ObservableObject {
             }
         }
         let gameID = selected?.id ?? Recipe.onboarding.id
+        noteGameInteraction(gameID)
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try library.perform(action, gameID: gameID)
@@ -759,7 +778,8 @@ struct LibraryView: View {
     private func actionSteps(includeGame: Bool, title: String?) -> some View {
         let launcherName = model.launcherName
         let showsLauncherUninstall = model.selected?.launcherKind == .rsi
-        let launcherMissing = showsLauncherUninstall
+        let launcherMissing =
+            showsLauncherUninstall
             ? !model.snapshot.launcherClientInstalled
             : model.snapshot.needsSetup
         let signInNumber = showsLauncherUninstall ? 3 : 2

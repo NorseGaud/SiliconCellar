@@ -112,13 +112,15 @@ public struct LibraryStorage {
     }
 
     public func destinations() -> [StorageDestination] {
-        var choices = [StorageDestination(
-            id: "internal",
-            title: "This Mac",
-            folder: metadataRoot,
-            available: StorageFiles.available(metadataRoot),
-            problem: problem(for: metadataRoot)
-        )]
+        var choices = [
+            StorageDestination(
+                id: "internal",
+                title: "This Mac",
+                folder: metadataRoot,
+                available: StorageFiles.available(metadataRoot),
+                problem: problem(for: metadataRoot)
+            )
+        ]
         let keys: Set<URLResourceKey> = [.volumeIsInternalKey, .volumeIsLocalKey, .volumeNameKey, .volumeUUIDStringKey]
         let volumes = fm.mountedVolumeURLs(includingResourceValuesForKeys: Array(keys), options: [.skipHiddenVolumes]) ?? []
         for volume in volumes {
@@ -127,13 +129,14 @@ public struct LibraryStorage {
                 values.volumeIsLocal == true
             else { continue }
             let folder = Self.gameFolder(in: volume)
-            choices.append(StorageDestination(
-                id: values.volumeUUIDString ?? volume.path,
-                title: values.volumeName ?? volume.lastPathComponent,
-                folder: folder,
-                available: StorageFiles.available(volume),
-                problem: problem(for: folder)
-            ))
+            choices.append(
+                StorageDestination(
+                    id: values.volumeUUIDString ?? volume.path,
+                    title: values.volumeName ?? volume.lastPathComponent,
+                    folder: folder,
+                    available: StorageFiles.available(volume),
+                    problem: problem(for: folder)
+                ))
         }
         if let data = defaults.data(forKey: Self.lastCustomKey) {
             var stale = false
@@ -144,13 +147,14 @@ public struct LibraryStorage {
                 bookmarkDataIsStale: &stale
             ) {
                 let folder = Self.gameFolder(in: base)
-                choices.append(StorageDestination(
-                    id: "custom",
-                    title: base.lastPathComponent,
-                    folder: folder,
-                    available: StorageFiles.available(base),
-                    problem: problem(for: folder)
-                ))
+                choices.append(
+                    StorageDestination(
+                        id: "custom",
+                        title: base.lastPathComponent,
+                        folder: folder,
+                        available: StorageFiles.available(base),
+                        problem: problem(for: folder)
+                    ))
             }
         }
         return choices
@@ -287,7 +291,8 @@ public struct LibraryStorage {
     ) throws -> URL? {
         let source = runtimeRoot().standardizedFileURL
         try discardInterruptedMove(source: source)
-        let sameFolder = StorageFiles.canonical(destination) == StorageFiles.canonical(location())
+        let sameFolder =
+            StorageFiles.canonical(destination) == StorageFiles.canonical(location())
             || StorageFiles.canonical(destination) == StorageFiles.canonical(source)
         if sameFolder {
             try Self.validateDestination(destination, required: 0)
@@ -707,13 +712,14 @@ enum StorageTree {
                 }
                 let link = kind == S_IFLNK ? try fm.destinationOfSymbolicLink(atPath: url.path) : nil
                 if kind == S_IFDIR { folders.append(relative) }
-                result.append(Entry(
-                    path: relative,
-                    kind: kind,
-                    size: kind == S_IFREG ? Int64(info.st_size) : 0,
-                    permissions: info.st_mode & 0o7777,
-                    link: link
-                ))
+                result.append(
+                    Entry(
+                        path: relative,
+                        kind: kind,
+                        size: kind == S_IFREG ? Int64(info.st_size) : 0,
+                        permissions: info.st_mode & 0o7777,
+                        link: link
+                    ))
             }
         }
         return result.sorted { $0.path < $1.path }

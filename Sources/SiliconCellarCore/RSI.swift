@@ -1,4 +1,6 @@
+import CommonCrypto
 import Foundation
+import Security
 
 public enum RSIInstaller {
     /// Versioned URL, so the file stays the same. Update the version and SHA-256 together, like the Steam pin.
@@ -27,6 +29,14 @@ public enum RSIProcess {
         processCommands(in: processList).contains { $0.contains(RSIInstaller.clientFileName.lowercased()) }
     }
 
+    /// The main process must include `--in-process-gpu`. A separate GPU process cannot draw this window.
+    public static func clientDrawsInProcess(in processList: String) -> Bool {
+        let client = RSIInstaller.clientFileName.lowercased()
+        return processCommands(in: processList).contains { command in
+            command.contains(client) && !command.contains("--type=") && command.contains("--in-process-gpu")
+        }
+    }
+
     public static func isInstallerRunning(in processList: String) -> Bool {
         let names = [RSIInstaller.launchFileName, RSIInstaller.fileName, "winedbg"].map { $0.lowercased() }
         return processCommands(in: processList).contains { command in
@@ -38,6 +48,104 @@ public enum RSIProcess {
         processList.split(whereSeparator: \.isNewline)
             .map { $0.lowercased() }
             .filter { !ShellCommand.isShell($0) }
+    }
+}
+
+/// The RSI Launcher saves the account in `launcher store.json`. The file is encrypted.
+/// A sign-in has an identity and a session. The cookie file is written before sign-in.
+enum RSILauncherStore {
+    static let fileName = "launcher store.json"
+    /// electron-store key shipped in the RSI Launcher. It opens the saved account. It is not the account session.
+    private static let encryptionKey = "OjPs60LNS7LbbroAuPXDkwLRipgfH6hIFA6wvuBxkg4="
+
+    static func isSignedIn(_ data: Data) -> Bool {
+        guard let object = object(from: data) else { return false }
+        guard let identity = object["identity"] as? [String: Any] else { return false }
+        let name = identity["username"] as? String ?? ""
+        guard !name.isEmpty else { return false }
+        guard let session = object["session"] as? [String: Any] else { return false }
+        let value = session["value"] as? String ?? ""
+        return !value.isEmpty
+    }
+
+    /// The same file, with the account and session removed.
+    static func clearingSignIn(_ data: Data) -> Data? {
+        guard var object = object(from: data) else { return nil }
+        object["identity"] = NSNull()
+        object["session"] = NSNull()
+        return encrypted(object)
+    }
+
+    static func encrypted(_ object: [String: Any]) -> Data? {
+        guard JSONSerialization.isValidJSONObject(object),
+            let plain = try? JSONSerialization.data(withJSONObject: object)
+        else { return nil }
+        var iv = Data(count: 16)
+        let random = iv.withUnsafeMutableBytes { buffer in
+            SecRandomCopyBytes(kSecRandomDefault, 16, buffer.baseAddress!)
+        }
+        guard random == errSecSuccess, let cipher = crypt(CCOperation(kCCEncrypt), iv: iv, data: plain) else {
+            return nil
+        }
+        var result = iv
+        result.append(UInt8(ascii: ":"))
+        result.append(cipher)
+        return result
+    }
+
+    static func object(from data: Data) -> [String: Any]? {
+        let bytes = [UInt8](data)
+        guard bytes.count > 17, bytes[16] == UInt8(ascii: ":") else { return nil }
+        let iv = Data(bytes[0..<16])
+        guard let plain = crypt(CCOperation(kCCDecrypt), iv: iv, data: Data(bytes[17...])) else { return nil }
+        return try? JSONSerialization.jsonObject(with: plain) as? [String: Any]
+    }
+
+    private static func crypt(_ operation: CCOperation, iv: Data, data: Data) -> Data? {
+        let salt = Data(String(decoding: iv, as: UTF8.self).utf8)
+        let password = Array(encryptionKey.utf8)
+        var key = Data(count: kCCKeySizeAES256)
+        let derived = key.withUnsafeMutableBytes { keyBytes in
+            salt.withUnsafeBytes { saltBytes in
+                password.withUnsafeBytes { passwordBytes in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.bindMemory(to: Int8.self).baseAddress,
+                        password.count,
+                        saltBytes.bindMemory(to: UInt8.self).baseAddress,
+                        salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+                        10_000,
+                        keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                        kCCKeySizeAES256
+                    )
+                }
+            }
+        }
+        guard derived == kCCSuccess else { return nil }
+        let outputCount = data.count + kCCBlockSizeAES128
+        var output = Data(count: outputCount)
+        var written = 0
+        let status = output.withUnsafeMutableBytes { outBytes in
+            data.withUnsafeBytes { dataBytes in
+                iv.withUnsafeBytes { ivBytes in
+                    key.withUnsafeBytes { keyBytes in
+                        CCCrypt(
+                            operation,
+                            CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(kCCOptionPKCS7Padding),
+                            keyBytes.baseAddress, kCCKeySizeAES256,
+                            ivBytes.baseAddress,
+                            dataBytes.baseAddress, data.count,
+                            outBytes.baseAddress, outputCount,
+                            &written
+                        )
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess else { return nil }
+        return output.prefix(written)
     }
 }
 
@@ -61,12 +169,8 @@ extension Runtime {
         rsiClient != nil && files.fileExists(rsiLauncherFolder.appendingPathComponent(RSIInstaller.uninstallerFileName))
     }
 
-    /// Chromium writes this profile as soon as the window opens. The cookie file is not empty then.
-    /// The RSI website adds the session cookie only after the account sign-in succeeds.
+    /// Chromium writes this profile as soon as the window opens.
     public var rsiProfile: URL { userProfile.appendingPathComponent("AppData/Roaming/rsilauncher") }
-
-    /// Cookie name the RSI website sets for a signed-in account.
-    static let rsiSessionCookieName = "Rsi-Token"
 
     /// The folder the RSI Launcher must use for the game. Silicon Cellar looks for the game only in this folder.
     var rsiGameWindowsFolder: String {
@@ -74,11 +178,9 @@ extension Runtime {
     }
 
     var isRSISignedIn: Bool {
-        ["Network/Cookies", "Cookies"].contains { relative in
-            let cookies = rsiProfile.appendingPathComponent(relative)
-            guard let data = try? files.read(cookies) else { return false }
-            return data.range(of: Data(Self.rsiSessionCookieName.utf8)) != nil
-        }
+        let store = rsiProfile.appendingPathComponent(RSILauncherStore.fileName)
+        guard let data = try? files.read(store) else { return false }
+        return RSILauncherStore.isSignedIn(data)
     }
 
     var isRSIGameInstalled: Bool {
@@ -89,8 +191,8 @@ extension Runtime {
         ProcessSteamClientInspector.processList(commands: commands).map(RSIProcess.isClientRunning) ?? false
     }
 
-    /// Under Wine, Chromium's GPU process cannot draw into the window of the Electron process, so the window stays
-    /// white. In-process GPU draws in the process that owns the window.
+    /// Under Wine, Chromium's GPU process cannot draw into the window of the Electron process.
+    /// The window stays blank. In-process GPU draws in the process that owns the window.
     static let rsiChromiumSwitches = ["--in-process-gpu"]
 
     func ensureRSIClient() throws {
@@ -100,8 +202,8 @@ extension Runtime {
             url: RSIInstaller.downloadURL,
             expected: expectedRSISetupSHA256,
             progress: "Downloading the official RSI Launcher installer…",
-            bytes: RSIInstaller.byteCount,
             mismatch: "The downloaded RSI Launcher installer does not match the pinned SHA-256. Setup stopped without installing it.",
+            bytes: RSIInstaller.byteCount,
             timeout: rsiInstallerDownloadTimeout
         )
         try files.createDirectory(logs)
@@ -182,7 +284,7 @@ extension Runtime {
     }
 
     /// Product codes the .NET 4.5 setup looks up with `MsiGetProductInfo`. Wine stores them squashed, the same way
-    /// `squash_guid` does. When the key exists, the setup does not download `netfx_Full_x64.msi`.
+    /// `squash_guid` does.
     private static let dotNetProductCodes = [
         "FCDAC0A0AD874C333A05DC1548B97920",
         "0D741DA1E0EBC6D3CA11466FCD14361F",
@@ -193,22 +295,42 @@ extension Runtime {
         "DFC90B5F2B0FFA63D84FD16F6BF37C4B",
     ]
 
-    private func markDotNetProductsPresent() throws {
-        let environment = wineEnvironment(advertiseAVX: false)
-        for code in Self.dotNetProductCodes {
-            try commands.run(
-                executable: wine,
-                arguments: [
-                    "reg", "add",
-                    "HKCU\\Software\\Microsoft\\Installer\\Products\\\(code)",
-                    "/v", "ProductName", "/t", "REG_SZ",
-                    "/d", "Microsoft .NET Framework 4.5", "/f",
-                ],
-                environment: environment,
-                timeout: 30,
-                workingDirectory: nil
-            )
+    /// Higher than 4.5.50709. The setup then exits before it downloads `netfx_Full_x64.msi`.
+    private static let dotNetReportedVersion = "4.8.04084"
+
+    /// The 32-bit setup reads one of these views. A missing key lets the BITS download start.
+    private static let dotNetFrameworkKeys = [
+        "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full",
+        "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full",
+    ]
+
+    /// One registry file. `reg import` applies it in one Wine run.
+    static var dotNetProductRegistry: String {
+        var lines = ["REGEDIT4", ""]
+        for code in dotNetProductCodes {
+            lines.append("[HKEY_CURRENT_USER\\Software\\Microsoft\\Installer\\Products\\\(code)]")
+            lines.append("\"ProductName\"=\"Microsoft .NET Framework 4.5\"")
+            lines.append("")
         }
+        for key in dotNetFrameworkKeys {
+            lines.append("[\(key)]")
+            lines.append("\"Version\"=\"\(dotNetReportedVersion)\"")
+            lines.append("\"CBS\"=\"1\"")
+            lines.append("")
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    private func markDotNetProductsPresent() throws {
+        let regFile = downloads.appendingPathComponent("dotnet-products.reg")
+        try files.write(Data(Self.dotNetProductRegistry.utf8), to: regFile)
+        try commands.run(
+            executable: wine,
+            arguments: ["reg", "import", regFile.path],
+            environment: wineEnvironment(advertiseAVX: false),
+            timeout: 30,
+            workingDirectory: nil
+        )
     }
 
     /// Wine's `powershell.exe` is a stub. It exits 0 for every command. The installer reads that exit code as
@@ -269,7 +391,15 @@ extension Runtime {
             throw PortError("Install the RSI Launcher before you open it.")
         }
         if !isRuntimeCurrent && !isSessionLive { try prepare() }
-        if !isRSIClientRunning {
+        let list = ProcessSteamClientInspector.processList(commands: commands, timeout: 5)
+        let running = list.map(RSIProcess.isClientRunning) ?? false
+        let draws = list.map(RSIProcess.clientDrawsInProcess) ?? false
+        // The installer starts the launcher with no switches. That process plays audio and leaves a blank window.
+        if running && !draws {
+            sink.say("The RSI Launcher window did not open. Starting it again.")
+            endWineSession()
+        }
+        if !running || !draws {
             try files.createDirectory(logs)
             try commands.start(
                 executable: wine,
@@ -279,7 +409,18 @@ extension Runtime {
                 log: logs.appendingPathComponent("rsi-session.log")
             )
         }
-        frontmost.bringToFront(executable: wine)
+        try raiseRSILauncherWindow()
+    }
+
+    /// The Electron window appears after the process starts. Raise it when the title exists.
+    private func raiseRSILauncherWindow() throws {
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if frontmost.raiseNamedWindow(executable: wine, windowName: RSIInstaller.windowTitle) {
+                return
+            }
+            try pauseBetweenPolls(0.25)
+        }
     }
 
     func installRSIGame() throws {
@@ -338,6 +479,10 @@ extension Runtime {
         for relative in ["Network/Cookies", "Cookies", "Local Storage", "Session Storage"] {
             let url = rsiProfile.appendingPathComponent(relative)
             if files.fileExists(url) { try files.removeItem(url) }
+        }
+        let store = rsiProfile.appendingPathComponent(RSILauncherStore.fileName)
+        if let data = try? files.read(store), let cleared = RSILauncherStore.clearingSignIn(data) {
+            try files.write(cleared, to: store)
         }
         sink.say("RSI Launcher no longer has the saved sign-in. To end the sign-in, sign out in the RSI Launcher window.")
     }

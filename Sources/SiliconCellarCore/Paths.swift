@@ -25,6 +25,11 @@ public enum AppPaths {
         supportRoot(home: home, fileManager: fileManager).appendingPathComponent("Recipes")
     }
 
+    /// Last time the user selected each game or ran an action for it.
+    public static func gameInteractions(home: URL? = nil, fileManager: FileManager = .default) -> URL {
+        supportRoot(home: home, fileManager: fileManager).appendingPathComponent("game-interactions.json")
+    }
+
     public static func steamCMDRoot(home: URL? = nil, fileManager: FileManager = .default) -> URL {
         supportRoot(home: home, fileManager: fileManager).appendingPathComponent("SteamCMD")
     }

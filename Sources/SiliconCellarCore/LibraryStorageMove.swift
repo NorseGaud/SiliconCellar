@@ -72,11 +72,13 @@ struct LibraryStorageContainer: Codable {
         }
         let capacity = max(Int64(3_000_000_000), total - 512_000_000)
         do {
-            _ = try StorageFiles.command("/usr/bin/hdiutil", [
-                "create", "-size", "\(capacity / 1024)k", "-fs", "APFS",
-                "-volname", "Silicon Cellar", "-type", "SPARSEBUNDLE",
-                destination.appendingPathComponent(imageName).path,
-            ])
+            _ = try StorageFiles.command(
+                "/usr/bin/hdiutil",
+                [
+                    "create", "-size", "\(capacity / 1024)k", "-fs", "APFS",
+                    "-volname", "Silicon Cellar", "-type", "SPARSEBUNDLE",
+                    destination.appendingPathComponent(imageName).path,
+                ])
             return (container, try container.mount(store: store))
         } catch {
             try? container.remove(store: store)
@@ -93,9 +95,11 @@ struct LibraryStorageContainer: Codable {
         guard try FileManager.default.contentsOfDirectory(atPath: mount.path).isEmpty else {
             throw PortError("The storage mount folder is in use. Your files are unchanged.")
         }
-        _ = try StorageFiles.command("/usr/bin/hdiutil", [
-            "attach", image.path, "-nobrowse", "-noautoopen", "-mountpoint", mount.path, "-plist",
-        ])
+        _ = try StorageFiles.command(
+            "/usr/bin/hdiutil",
+            [
+                "attach", image.path, "-nobrowse", "-noautoopen", "-mountpoint", mount.path, "-plist",
+            ])
         guard let attached = try attachedMount(store: store),
             StorageFiles.canonical(attached) == StorageFiles.canonical(mount)
         else {

@@ -259,6 +259,40 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: env.runtime.readyMarker, encoding: .utf8), "runtime-v2 engine-a\n")
     }
 
+    func testPrepareUpdatesPrefixWhenWineInfStampDiffers() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v2 engine-a\n")
+        env.runtime.engineID = "engine-a"
+        let inf = env.root.appendingPathComponent("share/wine/wine.inf")
+        try FileManager.default.createDirectory(at: inf.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("inf".utf8).write(to: inf)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_791_032_444)],
+            ofItemAtPath: inf.path
+        )
+        try Data("100\n".utf8).write(to: env.runtime.prefix.appendingPathComponent(".update-timestamp"))
+        try env.runtime.prepare()
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+    }
+
+    func testPrepareSkipsWineInfUpdateWhenStampMatches() throws {
+        let env = try makeEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try writeExistingPrefix(env, readyMarker: "runtime-v2 engine-a\n")
+        env.runtime.engineID = "engine-a"
+        let inf = env.root.appendingPathComponent("share/wine/wine.inf")
+        try FileManager.default.createDirectory(at: inf.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("inf".utf8).write(to: inf)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_791_032_444)],
+            ofItemAtPath: inf.path
+        )
+        try Data("1791032444\n".utf8).write(to: env.runtime.prefix.appendingPathComponent(".update-timestamp"))
+        try env.runtime.prepare()
+        XCTAssertFalse(env.commands.ran.contains { $0.arguments == ["wineboot", "--update"] })
+    }
+
     func testPrepareSkipsUpdateForSameEngineID() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
@@ -1063,7 +1097,7 @@ final class RuntimeTests: XCTestCase {
                 workingDirectory: nil
             )
         ) { error in
-            XCTAssertTrue(error is TimeoutError)
+            XCTAssertEqual((error as? TimeoutError)?.errorDescription, "The command timed out: sleep 30.")
         }
         XCTAssertLessThan(Date().timeIntervalSince(began), 3.0)
     }

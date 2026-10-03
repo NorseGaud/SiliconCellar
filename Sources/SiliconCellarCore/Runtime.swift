@@ -1,5 +1,20 @@
 import Foundation
 
+/// Wine stores the `wine.inf` modification time in the prefix. A different time means the prefix update must run.
+enum WinePrefixStamp {
+    static func needsUpdate(wineInf: URL, stampFile: URL, files: FileSystem) -> Bool {
+        guard files.fileExists(wineInf),
+            let modified = try? FileManager.default.attributesOfItem(atPath: wineInf.path)[.modificationDate] as? Date
+        else { return false }
+        let expected = UInt64(modified.timeIntervalSince1970)
+        guard let data = try? files.read(stampFile),
+            let line = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).first,
+            let stored = UInt64(line.trimmingCharacters(in: .whitespaces))
+        else { return true }
+        return stored != expected
+    }
+}
+
 public final class Runtime: @unchecked Sendable {
     public let recipe: Recipe
     public let root: URL
@@ -76,6 +91,20 @@ public final class Runtime: @unchecked Sendable {
         guard let data = try? files.read(readyMarker) else { return false }
         return String(decoding: data, as: UTF8.self) == readyMarkerText
     }
+
+    /// Wine updates the prefix when `wine.inf` time and `.update-timestamp` differ.
+    private var prefixNeedsWineInfUpdate: Bool {
+        WinePrefixStamp.needsUpdate(wineInf: engineWineInf, stampFile: prefixUpdateStamp, files: files)
+    }
+
+    /// `Engine/bin/wine` -> `Engine/share/wine/wine.inf`. A wine path outside `bin` uses its folder.
+    private var engineWineInf: URL {
+        let folder = wine.deletingLastPathComponent()
+        let engineRoot = folder.lastPathComponent == "bin" ? folder.deletingLastPathComponent() : folder
+        return engineRoot.appendingPathComponent("share/wine/wine.inf")
+    }
+
+    private var prefixUpdateStamp: URL { prefix.appendingPathComponent(".update-timestamp") }
     public var downloads: URL { root.appendingPathComponent("downloads") }
     public var logs: URL { root.appendingPathComponent("logs") }
     public var readyMarker: URL { root.appendingPathComponent(recipe.launcherKind.readyMarkerName) }
@@ -360,10 +389,14 @@ public final class Runtime: @unchecked Sendable {
         guard files.fileExists(systemRegistry) else {
             throw PortError("The Windows environment did not finish creating.")
         }
-        if prefixExisted && !isRuntimeCurrent {
+        let engineChanged = prefixExisted && !isRuntimeCurrent
+        // A new Engine copy changes wine.inf. The first Wine command then updates the prefix.
+        // That update is slow. The short winecfg wait used to stop it.
+        let wineInfChanged = prefixExisted && prefixNeedsWineInfUpdate
+        if engineChanged || wineInfChanged {
             // Steam and the games stay; wineboot only refreshes the Wine files of the prefix.
             sink.say("Updating the Windows environment for Engine \(engineID)…")
-            try moveUserProfileToEngineUserName()
+            if engineChanged { try moveUserProfileToEngineUserName() }
             try commands.run(
                 executable: wine,
                 arguments: ["wineboot", "--update"],
@@ -979,7 +1012,7 @@ public final class Runtime: @unchecked Sendable {
         sink.say("Stopped \(launcherName).")
     }
 
-    private func endWineSession() {
+    func endWineSession() {
         _ = try? commands.run(
             executable: wineserver,
             arguments: ["-k"],

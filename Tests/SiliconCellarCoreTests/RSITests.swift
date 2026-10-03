@@ -25,10 +25,15 @@ extension RuntimeTests {
         return env
     }
 
-    func writeRSICookies(_ env: Environment) throws {
-        let cookies = env.runtime.rsiProfile.appendingPathComponent("Network/Cookies")
-        try FileManager.default.createDirectory(at: cookies.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data(Runtime.rsiSessionCookieName.utf8).write(to: cookies)
+    func writeRSISignIn(_ env: Environment) throws {
+        let store = env.runtime.rsiProfile.appendingPathComponent(RSILauncherStore.fileName)
+        try FileManager.default.createDirectory(at: store.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try XCTUnwrap(
+            RSILauncherStore.encrypted([
+                "identity": ["username": "pilot"],
+                "session": ["value": "session-token"],
+            ]))
+        try data.write(to: store)
     }
 
     func testRSISetupInstallsThePinnedClient() throws {
@@ -38,12 +43,15 @@ extension RuntimeTests {
         XCTAssertTrue(env.commands.ran.contains { $0.name == "curl" && $0.arguments.contains(RSIInstaller.downloadURL) })
         let installerStart = try XCTUnwrap(env.commands.started.first { $0.1.first?.hasSuffix(RSIInstaller.launchFileName) == true })
         XCTAssertEqual(Array(installerStart.1.dropFirst()), ["/D=\(RSIInstaller.windowsInstallPath)"])
-        XCTAssertTrue(env.commands.ran.contains {
-            $0.arguments.contains("Debugger") && $0.arguments.contains(#"C:\windows\system32\cmd.exe /c exit"#)
-        })
-        XCTAssertTrue(env.commands.ran.contains {
-            $0.arguments.contains("HKCU\\Software\\Microsoft\\Installer\\Products\\0D741DA1E0EBC6D3CA11466FCD14361F")
-        })
+        XCTAssertTrue(
+            env.commands.ran.contains {
+                $0.arguments.contains("Debugger") && $0.arguments.contains(#"C:\windows\system32\cmd.exe /c exit"#)
+            })
+        let dotNetRegistry = try String(contentsOf: env.runtime.downloads.appendingPathComponent("dotnet-products.reg"))
+        XCTAssertTrue(dotNetRegistry.contains("0D741DA1E0EBC6D3CA11466FCD14361F"))
+        XCTAssertTrue(dotNetRegistry.contains("NDP\\v4\\Full"))
+        XCTAssertTrue(dotNetRegistry.contains("4.8.04084"))
+        XCTAssertTrue(env.commands.ran.contains { $0.arguments.first == "reg" && $0.arguments.contains("import") })
         XCTAssertTrue(env.sink.messages.contains("The RSI Launcher does not need the .NET Framework download. Setup skips it."))
         XCTAssertEqual(
             env.commands.started.last?.1,
@@ -104,7 +112,7 @@ extension RuntimeTests {
         defer { try? FileManager.default.removeItem(at: env.root) }
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .setup)
         try env.runtime.setup()
-        try writeRSICookies(env)
+        try writeRSISignIn(env)
         XCTAssertTrue(env.runtime.isSignedIn)
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .install)
 
@@ -127,9 +135,10 @@ extension RuntimeTests {
         try env.runtime.installGame()
         XCTAssertTrue(env.runtime.isGameInstalled)
         XCTAssertEqual(env.commands.started.last?.1.last, "--in-process-gpu")
-        XCTAssertTrue(env.sink.messages.contains {
-            $0.contains("C:\\Program Files\\Roberts Space Industries\\StarCitizen")
-        })
+        XCTAssertTrue(
+            env.sink.messages.contains {
+                $0.contains("C:\\Program Files\\Roberts Space Industries\\StarCitizen")
+            })
 
         env.commands.finishRSIInstallOnStart = false
         env.commands.finishRSIUninstallOnStart = true
@@ -145,9 +154,10 @@ extension RuntimeTests {
         try env.runtime.installGame()
         env.commands.ran.removeAll()
         try env.runtime.playGame()
-        XCTAssertTrue(env.commands.ran.contains {
-            $0.arguments.first == "reg" && $0.arguments.contains { $0.contains("AppDefaults\\StarCitizen.exe\\SiliconCellar") }
-        })
+        XCTAssertTrue(
+            env.commands.ran.contains {
+                $0.arguments.first == "reg" && $0.arguments.contains { $0.contains("AppDefaults\\StarCitizen.exe\\SiliconCellar") }
+            })
         XCTAssertEqual(
             env.commands.started.last?.1,
             [try XCTUnwrap(env.runtime.rsiClient).path, "--in-process-gpu"]
@@ -155,29 +165,52 @@ extension RuntimeTests {
         XCTAssertEqual(env.commands.lastStartEnvironment["WINEPREFIX"], env.runtime.prefix.path)
     }
 
-    func testRSILogoutWithoutSessionRemovesTheCookies() throws {
+    func testRSILogoutClearsTheSavedSignIn() throws {
         let env = try makeRSIEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
-        try writeRSICookies(env)
+        try writeRSISignIn(env)
+        XCTAssertTrue(env.runtime.isSignedIn)
         try env.runtime.logout()
         XCTAssertFalse(env.runtime.isSignedIn)
     }
 
-    func testRSICookieFileWithoutTheSessionCookieIsNotASignIn() throws {
+    func testRSICookieFileIsNotASignIn() throws {
         let env = try makeRSIEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
         let cookies = env.runtime.rsiProfile.appendingPathComponent("Network/Cookies")
         try FileManager.default.createDirectory(at: cookies.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("SQLite format 3".utf8).write(to: cookies)
+        try Data("Rsi-Token".utf8).write(to: cookies)
         XCTAssertFalse(env.runtime.isSignedIn)
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .setup)
+    }
+
+    func testRSILauncherStoreSignIn() throws {
+        let signedIn = Data(
+            base64Encoded:
+                "JzS2JVmv/fY14kmIgbJEDDrRlbXq7QoOFnXjZ9H024G6MYdGs6J+C3j8cZbdGWV/gBiasDfax0NiHt0g+FR1FRibrZN5s7DJ4Zo7Asw8l4Z502E+U5k7w/Oaaij56AzKtlA7V29gwt9qQLTkOaHCCNbx8lXGgsms8bTNKqyNSc1K"
+        )!
+        XCTAssertTrue(RSILauncherStore.isSignedIn(signedIn))
+        let signedOut = Data(
+            base64Encoded:
+                "TWh6PuX1OX2SSx9FQ3SuqzqKwVmQl+5MbNIsxXqYUpPNXRja+rUfbE3LW796XPV19+sd91hsES8hfHHKsAGJ1ghZFC3sAa7vYe9sKU4botDotb2Yl81PVqXKdguzkLDAVQ==")!
+        XCTAssertFalse(RSILauncherStore.isSignedIn(signedOut))
+        let emptySession = Data(base64Encoded: "yWcIUrwND5AT7avyJdoa1zo8cJLAQgKOkebntRRjMrblFLWXN50cdHl0blrg8udgZx25mFEICRjBbb+CZka5Q8CYGexu008vb0+jhKIb3eN8")!
+        XCTAssertFalse(RSILauncherStore.isSignedIn(emptySession))
+        let roundTrip = try XCTUnwrap(
+            RSILauncherStore.encrypted([
+                "identity": ["username": "pilot"],
+                "session": ["value": "session-token"],
+            ]))
+        XCTAssertTrue(RSILauncherStore.isSignedIn(roundTrip))
+        let cleared = try XCTUnwrap(RSILauncherStore.clearingSignIn(roundTrip))
+        XCTAssertFalse(RSILauncherStore.isSignedIn(cleared))
     }
 
     func testRSIUninstallRemovesTheLauncherAndKeepsTheGame() throws {
         let env = try makeRSIEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
         try env.runtime.setup()
-        try writeRSICookies(env)
+        try writeRSISignIn(env)
         let game = try XCTUnwrap(env.runtime.game)
         try FileManager.default.createDirectory(at: game.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("game".utf8).write(to: game)
@@ -199,6 +232,52 @@ extension RuntimeTests {
         XCTAssertTrue(RSIProcess.isInstallerRunning(in: "/tmp/downloads/RSI Launcher-Setup-2.17.0.exe\n"))
         XCTAssertTrue(RSIProcess.isInstallerRunning(in: "winedbg --auto 12 34\n"))
         XCTAssertFalse(RSIProcess.isInstallerRunning(in: "/bin/ps\n"))
+        XCTAssertFalse(
+            RSIProcess.clientDrawsInProcess(
+                in: "C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe\n"
+            ))
+        XCTAssertFalse(
+            RSIProcess.clientDrawsInProcess(
+                in: "RSI Launcher.exe --type=gpu-process --in-process-gpu\n"
+            ))
+        XCTAssertTrue(
+            RSIProcess.clientDrawsInProcess(
+                in: "C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe --in-process-gpu\n"
+            ))
+    }
+
+    func testRSIOpenRestartsWhenTheWindowCannotDraw() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        env.commands.finishRSIInstallOnStart = true
+        try env.runtime.setup()
+        env.commands.live = true
+        env.commands.wineserverPath = env.runtime.wineserver.path
+        env.commands.liveProcessLines = [
+            #"C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"#
+        ]
+        let startsBefore = env.commands.started.count
+        try env.runtime.openRSI()
+        XCTAssertTrue(env.commands.ran.contains { $0.name == "wineserver" && $0.arguments == ["-k"] })
+        XCTAssertEqual(env.commands.started.count, startsBefore + 1)
+        XCTAssertEqual(env.commands.started.last?.1.last, "--in-process-gpu")
+        XCTAssertTrue(env.sink.messages.contains("The RSI Launcher window did not open. Starting it again."))
+    }
+
+    func testRSIOpenKeepsALauncherThatDrawsInProcess() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        env.commands.finishRSIInstallOnStart = true
+        try env.runtime.setup()
+        env.commands.live = true
+        env.commands.wineserverPath = env.runtime.wineserver.path
+        env.commands.liveProcessLines = [
+            #"C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe --in-process-gpu"#
+        ]
+        let startsBefore = env.commands.started.count
+        try env.runtime.openRSI()
+        XCTAssertEqual(env.commands.started.count, startsBefore)
+        XCTAssertFalse(env.sink.messages.contains("The RSI Launcher window did not open. Starting it again."))
     }
 
     func testDownloadProgressLineShowsMegabytes() {

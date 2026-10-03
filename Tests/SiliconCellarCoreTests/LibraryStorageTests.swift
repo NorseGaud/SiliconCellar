@@ -106,9 +106,11 @@ final class LibraryStorageTests: XCTestCase {
         let image = home.appendingPathComponent("exfat.sparseimage")
         let mount = home.appendingPathComponent("exfat-mount")
         try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
-        _ = try StorageFiles.command("/usr/bin/hdiutil", [
-            "create", "-size", "4g", "-fs", "ExFAT", "-volname", "SC_EXFAT", "-type", "SPARSE", image.path,
-        ])
+        _ = try StorageFiles.command(
+            "/usr/bin/hdiutil",
+            [
+                "create", "-size", "4g", "-fs", "ExFAT", "-volname", "SC_EXFAT", "-type", "SPARSE", image.path,
+            ])
         _ = try StorageFiles.command("/usr/bin/hdiutil", ["attach", image.path, "-nobrowse", "-mountpoint", mount.path])
         defer {
             let root = storage.runtimeRoot()
@@ -178,13 +180,14 @@ final class LibraryStorageTests: XCTestCase {
         try Data("save".utf8).write(to: support.appendingPathComponent("prefix/save.dat"))
         let destination = home.appendingPathComponent("External/Silicon Cellar")
         var corrupted = false
-        XCTAssertThrowsError(try storage.use(choice: destinationChoice(destination), headroom: 0) { _, message in
-            guard message == "Checking the copy…", !corrupted else { return }
-            corrupted = true
-            let journalURL = self.storage.directory.appendingPathComponent("library.transfer")
-            let journal = try! JSONDecoder().decode(StorageTransferJournal.self, from: Data(contentsOf: journalURL))
-            try! Data("corrupt".utf8).write(to: URL(fileURLWithPath: journal.stage).appendingPathComponent("prefix/save.dat"))
-        })
+        XCTAssertThrowsError(
+            try storage.use(choice: destinationChoice(destination), headroom: 0) { _, message in
+                guard message == "Checking the copy…", !corrupted else { return }
+                corrupted = true
+                let journalURL = self.storage.directory.appendingPathComponent("library.transfer")
+                let journal = try! JSONDecoder().decode(StorageTransferJournal.self, from: Data(contentsOf: journalURL))
+                try! Data("corrupt".utf8).write(to: URL(fileURLWithPath: journal.stage).appendingPathComponent("prefix/save.dat"))
+            })
         XCTAssertTrue(corrupted)
         XCTAssertEqual(try String(contentsOf: support.appendingPathComponent("prefix/save.dat"), encoding: .utf8), "save")
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))

@@ -16,11 +16,13 @@ struct StoragePicker: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Storage")
                 .font(.title2.bold())
-            Text(moving
-                ? "Move the games, settings, and local saves together. Save and quit your games. Then close the launcher."
-                : "Choose where to keep the games. Silicon Cellar makes a Silicon Cellar folder for them.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                moving
+                    ? "Move the games, settings, and local saves together. Save and quit your games. Then close the launcher."
+                    : "Choose where to keep the games. Silicon Cellar makes a Silicon Cellar folder for them."
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 8) {
                 Picker(moving ? "Move to" : "Keep games on", selection: $selected) {
                     ForEach(choices) { item in
@@ -97,13 +99,14 @@ struct StoragePicker: View {
                 var issue: String?
                 do { try LibraryStorage.validateDestination(folder) } catch { issue = (error as? PortError)?.message ?? error.localizedDescription }
                 choices.removeAll { $0.id == "custom" }
-                choices.append(StorageDestination(
-                    id: "custom",
-                    title: base.lastPathComponent,
-                    folder: folder,
-                    available: LibraryStorage.availableBytes(folder),
-                    problem: issue
-                ))
+                choices.append(
+                    StorageDestination(
+                        id: "custom",
+                        title: base.lastPathComponent,
+                        folder: folder,
+                        available: LibraryStorage.availableBytes(folder),
+                        problem: issue
+                    ))
                 selected = "custom"
             } else {
                 selected = old == "custom-picker" ? "internal" : old
@@ -116,13 +119,14 @@ struct StoragePicker: View {
         choices = storage.destinations()
         let current = storage.location()
         if !choices.contains(where: { LibraryStorage.sameFolder($0.folder, current) }) {
-            choices.insert(StorageDestination(
-                id: "current",
-                title: "\(storage.displayName()) (current location)",
-                folder: current,
-                available: LibraryStorage.availableBytes(current),
-                problem: storage.issue(mountContainers: false)
-            ), at: 0)
+            choices.insert(
+                StorageDestination(
+                    id: "current",
+                    title: "\(storage.displayName()) (current location)",
+                    folder: current,
+                    available: LibraryStorage.availableBytes(current),
+                    problem: storage.issue(mountContainers: false)
+                ), at: 0)
         }
         if loaded, choices.contains(where: { $0.id == previous }) {
             selected = previous

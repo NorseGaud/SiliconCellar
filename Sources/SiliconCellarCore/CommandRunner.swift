@@ -188,7 +188,8 @@ public struct ProcessCommandRunner: CommandRunning {
         try? handle.close()
 
         if timedOut {
-            throw TimeoutError()
+            let command = ([executable.lastPathComponent] + arguments).joined(separator: " ")
+            throw TimeoutError(command: command)
         }
 
         lock.lock()
