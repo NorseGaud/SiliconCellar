@@ -10,6 +10,7 @@ public protocol FileSystem {
     func contentsOfDirectory(_ url: URL) throws -> [URL]
     func isSymbolicLink(_ url: URL) -> Bool
     func createSymbolicLink(_ url: URL, destination: String) throws
+    func linkItem(from: URL, to: URL) throws
     func setExecutable(_ url: URL) throws
 }
 
@@ -43,6 +44,10 @@ public struct FoundationFileSystem: FileSystem {
 
     public func createSymbolicLink(_ url: URL, destination: String) throws {
         try manager.createSymbolicLink(atPath: url.path, withDestinationPath: destination)
+    }
+
+    public func linkItem(from: URL, to: URL) throws {
+        try manager.linkItem(at: from, to: to)
     }
 
     public func setExecutable(_ url: URL) throws {

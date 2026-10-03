@@ -50,5 +50,6 @@ final class MemoryFiles: FileSystem {
     func contentsOfDirectory(_ url: URL) throws -> [URL] { [] }
     func isSymbolicLink(_ url: URL) -> Bool { false }
     func createSymbolicLink(_ url: URL, destination: String) throws { paths.insert(url.path) }
+    func linkItem(from: URL, to: URL) throws { paths.insert(to.path) }
     func setExecutable(_ url: URL) throws {}
 }
