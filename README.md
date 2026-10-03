@@ -17,7 +17,7 @@
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/NorseGaud?logo=githubsponsors)](https://github.com/sponsors/NorseGaud)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/t2ihlmy2bu)
 
-Run Windows Steam games that you own on Apple Silicon. The app bundles Wine. It does not include game files or a game license.
+Run Windows games that you own on Apple Silicon. The games come from Steam, Battle.net, or the RSI Launcher. The app bundles Wine. It does not include game files or a game license.
 
 > **Limited time.** macOS warns that support for Intel-based apps is ending. Silicon Cellar bundles Wine, which still runs as Intel code under Rosetta. Enjoy it while you can.
 >
@@ -30,7 +30,7 @@ Run Windows Steam games that you own on Apple Silicon. The app bundles Wine. It 
 - An Apple Silicon Mac
 - Rosetta
 - The Wine Engine bundled in the app (`Contents/Resources/Engine`). It is Wine 11.0 from the CodeWeavers CrossOver 26.3 source with Silicon Cellar fixes, built in [NorseGaud/wine](https://github.com/NorseGaud/wine). Packaging downloads the pinned [release](https://github.com/NorseGaud/wine/releases).
-- A Steam account that owns the game
+- An account for the store that sells the game (Steam, Battle.net, or the RSI Launcher)
 
 ## Install
 
@@ -42,17 +42,18 @@ The cask is in [NorseGaud/homebrew-siliconcellar](https://github.com/NorseGaud/h
 
 ## Supported games
 
-Each game below has a recipe in `Recipes/`. When you add a recipe, add the game to this list. A checkmark means the game was installed and played with the current recipe. After that test, change `[ ]` to `[x]`.
+Each game below has a recipe in `Recipes/`. When you add a recipe, add the game to this list (`make test` checks this). A checkmark means the game was installed and played with the current recipe. After that test, change `[ ]` to `[x]`.
 
 [`Recipes/QUEUE.md`](Recipes/QUEUE.md) is the list of owned games that do not have a recipe yet. `Recipes/spacewar.json` is the example recipe. It is not a supported game.
 
 - [x] [Age of Empires II (2013)](Recipes/aoe2-hd.json)
 - [ ] [Age of Empires II: Definitive Edition](Recipes/aoe2.json)
-- [ ] [Age of Empires III (2007)](Recipes/aoe3-2007.json)
+- [x] [Age of Empires III (2007)](Recipes/aoe3-2007.json)
 - [ ] [Age of Empires III: Definitive Edition](Recipes/aoe3.json)
 - [ ] [Age of Empires IV](Recipes/aoe4.json)
 - [ ] [Age of Mythology: Retold](Recipes/aom-retold.json)
-- [ ] [Assassin's Creed](Recipes/assassins-creed.json)
+- [x] [Assassin's Creed](Recipes/assassins-creed.json)
+- [ ] [BRINK](Recipes/brink.json)
 - [ ] [Command & Conquer: Generals Zero Hour](Recipes/zero-hour.json)
 - [ ] [Command & Conquer: Red Alert 2](Recipes/red-alert2.json)
 - [ ] [Company of Heroes 3](Recipes/coh3.json)
@@ -69,6 +70,7 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 - [ ] [Path of Exile 2](Recipes/poe2.json)
 - [ ] [Red Dead Redemption 2](Recipes/rdr2.json)
 - [ ] [The Elder Scrolls V: Skyrim Special Edition](Recipes/skyrim-se.json)
+- [ ] [Star Citizen](Recipes/star-citizen.json)
 - [ ] [The Witcher 3: Wild Hunt — Remastered](Recipes/witcher3.json)
 
 ## Build
@@ -91,7 +93,11 @@ For daily UI work, run `make dev`. That builds SiliconCellar, wraps it in `.buil
 
 ## Add a game
 
-Copy `Recipes/spacewar.json` and change the fields:
+1. Get the Steam data for the game: `scripts/steam-app-info.py <Steam app ID>`. It reads the local Steam caches and prints `installFolder`, the Windows launch executables, and their arguments. `scripts/steam-app-info.py --owned` lists all owned games and shows which ones have a recipe.
+2. Copy the recipe of a similar game (same launcher, same era of DirectX), or `Recipes/spacewar.json`. Change the fields.
+3. Put the file in `Recipes/`. The `id` must match the file name. For a personal recipe that stays out of git, use `~/Library/Application Support/SiliconCellar/Recipes/`.
+4. Add the game to [Supported games](#supported-games) with `[ ]`. `make test` fails if a recipe in `Recipes/` is not in that list.
+5. Install and play the game. When it plays, change `[ ]` to `[x]` in Supported games, and mark its line in [`Recipes/QUEUE.md`](Recipes/QUEUE.md) with `[x]`. If the recipe needs more than the Steam default launch, write the fix on that queue line.
 
 ```json
 {
@@ -108,15 +114,29 @@ Copy `Recipes/spacewar.json` and change the fields:
 }
 ```
 
-Put the file in `Recipes/` or in `~/Library/Application Support/SiliconCellar/Recipes/`. The `id` must match the file name. `steamID` is the Steam app number. `installFolder` is the Steam `installdir` name.
+`steamID` is the Steam app number. `installFolder` is the Steam `installdir` name. `executable` is the file that Silicon Cellar waits for. `executableRelativePath` is its path under `installFolder` when it is not at the top. `environment` adds Wine environment values for the launcher and the game.
 
-[`Recipes/QUEUE.md`](Recipes/QUEUE.md) lists the Windows-only Steam games that do not have a recipe yet. Each line gives the Steam ID, the install folder, and the executable. When you add a recipe for a game, mark its line with `[x]`. The app loads only `.json` files from `Recipes/`, so it ignores this file.
+These optional fields change how the game starts. `Sources/SiliconCellarCore/Recipe.swift` is the full list.
+
+| Field | Use |
+| --- | --- |
+| `directLaunch` | `true` starts Steam, then runs `executable` through Wine, not `-applaunch`. Use it when Steam starts a launcher that fails. |
+| `executableArguments` | Arguments after the executable for a direct launch (for example `["SKIPINTRO"]`). |
+| `quarantineFiles` | Files in the install folder to move aside before play (for example a DDrawCompat `ddraw.dll`). |
+| `seedFiles` | Files to write under the install folder before play (for example `steam_appid.txt`). |
+| `wineD3DRenderer` | Wine `Direct3D` renderer for this executable: `gl`, `vulkan`, `gdi`, or `no3d`. |
+| `wineVirtualDesktop` | Wine virtual desktop for a direct launch: `WIDTHxHEIGHT`, or `display` for the Mac screen size. |
+| `macDriverOptions` | Wine Mac driver values for this executable (for example `{"FullscreenBelowNotch": "y"}`). |
+
+[`Recipes/QUEUE.md`](Recipes/QUEUE.md) lists the Windows-only Steam games that do not have a recipe yet. Each line gives the Steam ID, the install folder, and the executable. The app loads only `.json` files from `Recipes/`, so it ignores this file.
 
 ### Launcher
 
 A recipe with `steamID` can use Steam. A recipe with `battleNetProductCode` can use Battle.net. That code is the one that Battle.net uses in `--exec="launch <code>"` (for example `OSI` for Diablo II: Resurrected). For Battle.net, `installFolder` is the folder that Battle.net makes in `C:\Program Files (x86)`.
 
-A recipe with both can use either launcher. Steam is the default. In the app, choose **Steam** or **Battle.net** at the top of the game page. With the CLI, use `launcher --game ID --use steam|battlenet`. Silicon Cellar saves the choice in `launcher-choices.json` in the data folder. Each launcher has its own prefix, so each launcher installs its own copy of the game. Use the launcher of the store where you bought the game. The optional `launcher` field sets a fixed launcher for a recipe. See `Recipes/d2r.json`.
+A recipe with `rsiChannel` can use the RSI Launcher. That value is the Star Citizen channel folder (for example `LIVE`). `installFolder` is the folder under `C:\Program Files\Roberts Space Industries`. Install the game in that folder. Play opens the RSI Launcher. Click **Launch** there. See `Recipes/star-citizen.json`.
+
+A recipe with more than one launcher can use any of them. Steam is the default. In the app, choose the launcher at the top of the game page. With the CLI, use `launcher --game ID --use steam|battlenet|rsi`. Silicon Cellar saves the choice in `launcher-choices.json` in the data folder. Each launcher has its own prefix, so each launcher installs its own copy of the game. Use the launcher of the store where you bought the game. The optional `launcher` field sets a fixed launcher for a recipe. See `Recipes/d2r.json` and `Recipes/star-citizen.json`.
 
 The optional `profileFolders` field lists folders under the Windows user profile (`C:\users\crossover`) that Silicon Cellar creates before play. D2R from Steam needs `AppData/Local/Blizzard Entertainment/ClientSdk`. Without it, the game says that you were not online in the last 30 days.
 
@@ -153,7 +173,9 @@ siliconcellar accept-apple-license
 
 Optional: `--data-root PATH`, `--recipes PATH`, `SILICONCELLAR_WINE`, `SILICONCELLAR_RECIPES`.
 
-Each launcher has its own Wine prefix in `~/Library/Application Support/SiliconCellar`: `prefix` for Steam and `prefix-battlenet` for Battle.net. All games of a launcher share its prefix, so a problem in one launcher cannot break the other. Steam and Battle.net can run at the same time. **Stop** and `stop` close only the launcher of the selected game. Each launcher runs one install or launch at a time. Setup deletes leftover `Games/` and `SteamCMD/` folders from older Silicon Cellar builds. Recipes stay.
+Each launcher has its own Wine prefix: `prefix` for Steam, `prefix-battlenet` for Battle.net, and `prefix-rsi` for the RSI Launcher. All games of a launcher share its prefix, so a problem in one launcher cannot break the other. The launchers can run at the same time. **Stop** and `stop` close only the launcher of the selected game. Each launcher runs one install or launch at a time. Setup deletes leftover `Games/` and `SteamCMD/` folders from older Silicon Cellar builds. Recipes stay.
+
+The default location is `~/Library/Application Support/SiliconCellar`. **Storage** in the app can put the prefixes on another APFS or ExFAT drive. The app keeps a record of that drive on this Mac. Wine and recipes stay on this Mac. On ExFAT, the games live in a disk image so Wine links keep working. Connect the same drive before you play. `--data-root` still uses the path you pass.
 
 ## Flow
 
@@ -168,6 +190,8 @@ Each launcher has its own Wine prefix in `~/Library/Application Support/SiliconC
 The Steam client owns sign-in, ownership, and updates. **Sign out** / `logout` clears local `loginusers.vdf` when Steam is not running. If Steam is open, sign out in the Steam window.
 
 For a Battle.net game, the same steps use Battle.net. `setup` installs the official Battle.net client and opens it. Sign in in the Battle.net window. `install` opens the game page. Click **Install** there, and Silicon Cellar waits until Battle.net finishes. `play` sets the renderer, then runs `Battle.net.exe --exec="launch <code>"`. Silicon Cellar sets `Client.HardwareAcceleration` to `false` in `Battle.net.config`, because the Battle.net window can stay black in Wine. It also runs Battle.net with two Wine fixes. `WINE_SIMULATE_WRITECOPY=1` stops the page processes of Battle.net from crashing (only the loading icon shows without it). `--in-process-gpu` makes Chromium draw in the Battle.net window (the window stays white without it). `logout` removes the saved account name. To end the sign-in, sign out in the Battle.net window.
+
+For Star Citizen, the same steps use the RSI Launcher. `setup` opens the official RSI Launcher installer. Finish that window and keep the folder `C:\Program Files\Roberts Space Industries\RSI Launcher`. Sign in in the RSI Launcher window. `install` opens the launcher. Install the game in `C:\Program Files\Roberts Space Industries\StarCitizen`. Silicon Cellar waits until `StarCitizen.exe` is in that folder. `play` sets the renderer, then opens the RSI Launcher. Click **Launch** there. The launcher runs with `WINE_SIMULATE_WRITECOPY=1` and `--in-process-gpu`, for the same Chromium limits as Battle.net. `logout` removes the saved browser sign-in when the launcher is closed. To end the sign-in, sign out in the RSI Launcher window.
 
 ## Wine location
 
@@ -211,6 +235,14 @@ Silicon Cellar starts these HTTPS connections. A firewall may ask you to allow t
 - URL: `https://downloader.battle.net/download/installer/win/1.0.66/Battle.net-Setup.exe`
 - Why: install the official Battle.net client in the Battle.net Wine prefix. Setup checks the SHA-256 before the installer runs. The installer then downloads the client from Blizzard servers.
 
+**Official RSI Launcher installer**
+
+- When: `setup` of a Star Citizen recipe, if `RSI Launcher-Setup-2.17.0.exe` is not already cached with the pinned SHA-256
+- Command: `/usr/bin/curl` with `--proto =https` and `--proto-redir =https`
+- Host: `install.robertsspaceindustries.com`, TCP 443
+- URL: `https://install.robertsspaceindustries.com/rel/2/RSI%20Launcher-Setup-2.17.0.exe`
+- Why: install the official RSI Launcher in the RSI Wine prefix. Setup checks the SHA-256 before the installer runs.
+
 **Renderer packages**
 
 - When: first `play` of a game whose recipe sets a `renderer` other than `wine`, if the package is not already installed with the pinned SHA-256
@@ -219,7 +251,7 @@ Silicon Cellar starts these HTTPS connections. A firewall may ask you to allow t
 - URL: `https://github.com/NorseGaud/siliconcellar-renderers/releases/download/r1/<renderer>.tar.xz`
 - Why: install DXVK, DXMT, or D3DMetal. Play checks the SHA-256 before it extracts the package.
 
-The Steam client talks to Valve servers for sign-in, ownership, game files, and updates. The Battle.net client talks to Blizzard servers for the same things. A game may open more connections. Silicon Cellar does not control those.
+The Steam client talks to Valve servers for sign-in, ownership, game files, and updates. The Battle.net client talks to Blizzard servers for the same things. The RSI Launcher talks to Roberts Space Industries servers for the same things. A game may open more connections. Silicon Cellar does not control those.
 
 The toolkit does not send analytics.
 

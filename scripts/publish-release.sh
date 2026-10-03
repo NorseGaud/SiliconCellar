@@ -30,7 +30,8 @@ check_release_preconditions() {
     gh auth status >/dev/null 2>&1 || fail "gh is not signed in; run gh auth login"
     test -f "$cask_file" || fail "missing cask: $cask_file (clone git@github.com:${homebrew_tap_repo}.git there, or set HOMEBREW_TAP_DIR)"
     [ -z "$(git status --porcelain)" ] || fail "working tree has uncommitted changes; commit them so the release matches the DMG"
-    git fetch origin --tags --quiet
+    # GitHub releases own the version tags, so a stale local tag must not stop the check.
+    git fetch origin --tags --force --quiet
     [ -n "$(git branch -r --contains HEAD)" ] || fail "HEAD is not pushed to origin; push it first"
     [ "$(release_state)" != "published" ] || fail "release $version is already published; bump VERSION"
 }

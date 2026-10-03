@@ -99,18 +99,52 @@ For unsigned packaging only, use `make app` or `make ci`.
 
 | Path | Role |
 |------|------|
-| `Sources/SiliconCellarCore/` | Shared library (Wine prefix, Steam, recipes) |
-| `Sources/SiliconCellarApp/` | SwiftUI app |
-| `Sources/siliconcellar/` | CLI |
-| `Tests/SiliconCellarCoreTests/` | Unit tests |
-| `Recipes/` | Bundled game recipes (JSON) |
+| `Sources/SiliconCellarCore/` | Shared library (Wine prefix, launchers, recipes). Files below |
+| `Sources/SiliconCellarApp/App.swift` | SwiftUI app (one file) |
+| `Sources/siliconcellar/main.swift` | CLI |
+| `Tests/SiliconCellarCoreTests/` | Unit tests. `RuntimeTests.swift` has the fake Wine that the other tests use |
+| `Recipes/` | Bundled game recipes (JSON) and `QUEUE.md` |
 | `wine/` | NorseGaud/wine submodule (SSH). Engine source you edit |
 | `engine/manifest.json` | Pinned NorseGaud/wine Engine release |
-| `scripts/` | Package, Engine fetch, DMG, `dev.sh` |
+| `scripts/` | Package, Engine fetch, DMG, `dev.sh`, `steam-app-info.py` |
+
+Files in `Sources/SiliconCellarCore/`:
+
+| File | Role |
+|------|------|
+| `Recipe.swift` | `Launcher` enum and the `Recipe` fields, with their checks |
+| `RecipeStore.swift` | Loads `Recipes/` and the user recipe folder |
+| `Runtime.swift` | Prefix setup, Steam, install, play, stop, Wine environment (`wineEnvironment`), `Library` |
+| `BattleNet.swift`, `RSI.swift` | Battle.net and RSI Launcher parts of `Runtime` |
+| `GameFixes.swift` | Per-game fixes at Play (`switch recipe.id`). Bundled files are in `Fixes/` |
+| `Frontmost.swift` | Brings Wine windows to the front, Wine virtual desktop size |
+| `SteamWebHelper.swift` | Bytes of the `steamwebhelper` wrapper (`scripts/steamwebhelper-wrap.c`) |
+| `SteamLaunchProgress.swift` | Reads Steam logs to show launch progress |
+| `Snapshot.swift` | `GameStage` and the state that the app shows |
+| `Renderer.swift` | DXVK, DXMT, and D3DMetal packages |
+| `LibraryStorage.swift`, `LibraryStorageMove.swift` | Where the library is stored, and moves to other disks |
+| `CommandRunner.swift` | Runs processes and reads their output |
 
 ## Recipes
 
-Copy `Recipes/spacewar.json`, edit fields, keep `id` equal to the file name. Put personal recipes in `~/Library/Application Support/SiliconCellar/Recipes/` if you do not want them in git. Validate with `make lint`.
+See [Add a game](README.md#add-a-game). `scripts/steam-app-info.py <Steam app ID>` prints the install folder and executables from the local Steam caches. `make test` checks that each recipe loads and is in the README "Supported games" list.
+
+## Debugging
+
+All data is in `~/Library/Application Support/SiliconCellar`.
+
+| What | Where |
+|------|-------|
+| Silicon Cellar logs | `logs/`: `steam-bootstrap.log`, `steam-session.log`, `battlenet-setup.log`, `battlenet-session.log`, `rsi-setup.log`, `rsi-session.log` |
+| Wine prefix of each launcher | `prefix`, `prefix-battlenet`, `prefix-rsi` |
+| Steam logs | `prefix/drive_c/Program Files (x86)/Steam/logs/`. Start with `console_log.txt`, `gameprocess_log.txt`, `runprocess_log.txt`, `webhelper.txt`, and `cef_log.txt` |
+| Steam game files | `prefix/drive_c/Program Files (x86)/Steam/steamapps/common/<installFolder>` |
+| Windows user profile | `<prefix>/drive_c/users/crossover` (saves and settings in `AppData`) |
+| `make dev` output | The terminal that runs `make dev` |
+
+`wineEnvironment` in `Runtime.swift` sets `WINEDEBUG=-all`. To get a Wine trace, add `WINEDEBUG` to the `environment` of the recipe (for example `"WINEDEBUG": "+key,+keyboard"`). The recipe value replaces `-all`, and the trace goes into the session log of the launcher. `make dev` reloads after the recipe changes. Remove the value when you are done.
+
+Do not start `steam.exe` by hand with your own environment. Steam started from a shell quits after about 2 seconds. Start it from the app or the CLI.
 
 ## Before you open a pull request
 
