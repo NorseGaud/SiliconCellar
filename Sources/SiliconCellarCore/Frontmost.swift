@@ -8,6 +8,8 @@ public protocol FrontmostActivating: Sendable {
     func bringSteamUIToFront(executable: URL, timeout: TimeInterval)
     /// Activate Wine and raise a window whose title contains `windowName` (game cursor capture).
     func bringGameWindowToFront(executable: URL, windowName: String, timeout: TimeInterval)
+    /// Raise one Wine window whose title contains `windowName`. Returns false when that window is not up yet.
+    func raiseNamedWindow(executable: URL, windowName: String) -> Bool
 }
 
 /// Main display size in points (Wine mac driver units without RetinaMode).
@@ -53,6 +55,11 @@ extension FrontmostActivating {
 
     public func bringGameWindowToFront(executable: URL, windowName: String, timeout: TimeInterval) {
         bringToFront(executable: executable)
+    }
+
+    public func raiseNamedWindow(executable: URL, windowName: String) -> Bool {
+        bringToFront(executable: executable)
+        return true
     }
 }
 
@@ -249,6 +256,13 @@ public struct WorkspaceFrontmost: FrontmostActivating {
             SystemChrome.hideMenuBarAndDock(whileWine: executable)
         }
         WineTerminal.closeStagingSessions()
+    }
+
+    public func raiseNamedWindow(executable: URL, windowName: String) -> Bool {
+        let needle = windowName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return false }
+        _ = activateNow(executable: executable, raiseLargestWindow: false)
+        return SteamUIFocus.raiseWineWindow(titled: needle, wineExecutable: executable)
     }
 
     @discardableResult

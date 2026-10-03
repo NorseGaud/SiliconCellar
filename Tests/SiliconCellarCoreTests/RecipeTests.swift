@@ -78,6 +78,22 @@ final class RecipeTests: XCTestCase {
         XCTAssertEqual(recipe.launcherKind, .steam)
     }
 
+    func testRSIRecipeNeedsNoSteamID() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"star-citizen","title":"Star Citizen","launcher":"rsi","rsiChannel":"LIVE","installFolder":"StarCitizen","executable":"StarCitizen.exe"}"#
+        )
+        try recipe.validate()
+        XCTAssertEqual(recipe.launcherKind, .rsi)
+        XCTAssertEqual(recipe.supportedLaunchers, [.rsi])
+    }
+
+    func testRSIRecipeNeedsAChannel() throws {
+        let recipe = try Self.decodeRecipe(
+            #"{"id":"star-citizen","title":"Star Citizen","launcher":"rsi","installFolder":"StarCitizen","executable":"StarCitizen.exe"}"#
+        )
+        XCTAssertThrowsError(try recipe.validate())
+    }
+
     func testBattleNetRecipeNeedsNoSteamID() throws {
         let recipe = try Self.decodeRecipe(
             #"{"id":"d2r","title":"D2R","launcher":"battlenet","battleNetProductCode":"OSI","installFolder":"D2R","executable":"D2R.exe"}"#
@@ -156,21 +172,28 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.loadAll())
     }
 
+    private static let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    private static let recipesDirectory = repositoryRoot.appendingPathComponent("Recipes")
+
+    private static func recipeFileIDs() throws -> Set<String> {
+        let fileNames = try FileManager.default.contentsOfDirectory(atPath: recipesDirectory.path)
+        return Set(fileNames.filter { $0.hasSuffix(".json") }.map { String($0.dropLast(".json".count)) })
+    }
+
+    func testReadmeListsEveryBundledGame() throws {
+        let readme = try String(contentsOf: Self.repositoryRoot.appendingPathComponent("README.md"), encoding: .utf8)
+        let unlisted = try Self.recipeFileIDs()
+            .subtracting(["spacewar"])
+            .filter { !readme.contains("](Recipes/\($0).json)") }
+        XCTAssertEqual(unlisted, [], "Add these recipes to the README \"Supported games\" list")
+    }
+
     func testBundledRecipesValidate() throws {
-        let recipesDirectory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Recipes")
-        let recipes = try RecipeStore(searchPaths: [recipesDirectory]).loadAll()
-        let ids = Set(recipes.map(\.id))
-        let expected = [
-            "spacewar", "aoe4", "aoe2", "aoe3", "coh3", "cs2", "zero-hour", "red-alert2",
-            "overwatch", "diablo4", "poe2", "hogwarts-legacy", "skyrim-se",
-            "san-andreas-de", "heroes3", "elden-ring", "aom-retold", "mdk", "mdk2",
-            "witcher3", "d2r", "rdr2", "aoe2-hd", "aoe3-2007", "assassins-creed",
-        ]
-        XCTAssertEqual(ids, Set(expected))
+        let recipes = try RecipeStore(searchPaths: [Self.recipesDirectory]).loadAll()
+        XCTAssertEqual(Set(recipes.map(\.id)), try Self.recipeFileIDs())
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.steamID, "38450")
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.executable, "MDK3DFX.EXE")
         XCTAssertEqual(recipes.first { $0.id == "mdk" }?.launchesDirectly, true)
@@ -209,6 +232,15 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.executable, "AssassinsCreed_Dx9.exe")
         XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.launchesDirectly, true)
         XCTAssertEqual(recipes.first { $0.id == "assassins-creed" }?.installFolder, "Assassins Creed")
+        XCTAssertEqual(recipes.first { $0.id == "brink" }?.steamID, "22350")
+        XCTAssertEqual(recipes.first { $0.id == "brink" }?.executable, "brink.exe")
+        XCTAssertEqual(recipes.first { $0.id == "brink" }?.installFolder, "BRINK")
+        let starCitizen = try XCTUnwrap(recipes.first { $0.id == "star-citizen" })
+        XCTAssertEqual(starCitizen.launcherKind, .rsi)
+        XCTAssertEqual(starCitizen.supportedLaunchers, [.rsi])
+        XCTAssertEqual(starCitizen.rsiChannel, "LIVE")
+        XCTAssertEqual(starCitizen.installFolder, "StarCitizen")
+        XCTAssertEqual(starCitizen.gameRelativePath, "LIVE/Bin64/StarCitizen.exe")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.steamID, "38460")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.executable, "mdk2Main.exe")
         XCTAssertEqual(recipes.first { $0.id == "mdk2" }?.launchesDirectly, true)

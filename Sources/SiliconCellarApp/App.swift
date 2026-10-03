@@ -47,6 +47,10 @@ struct SiliconCellarApp: App {
                     model.findWineAgain()
                 }
                 .disabled(model.busy)
+                Button("Storage…") {
+                    model.showStoragePicker = true
+                }
+                .disabled(model.busy || model.homebrewBusy)
             }
         }
     }
@@ -65,6 +69,12 @@ final class LibraryModel: ObservableObject {
     @Published var homebrewBusy = false
     @Published var statusLines: [String] = []
     @Published var popup: AppPopup?
+    @Published var showStoragePicker = false
+    @Published var storageName = "This Mac"
+    @Published var storageIssue: String?
+    @Published var storageMessage = ""
+    @Published var storageProgress = 0.0
+    @Published var storageUsesContainer = false
     @Published var backgroundReady = false
     @Published var launchProgress = SteamLaunchProgress()
     @Published var installedIDs: Set<String> = []
@@ -146,6 +156,7 @@ final class LibraryModel: ObservableObject {
             if let library { recipes = recipes.map(library.applyingLauncherChoice) }
             library?.removeLegacyData()
             WineTerminal.closeStagingSessions()
+            refreshStorageState()
             applySelectedFileStatus()
             refresh()
             refreshInstalled()
@@ -281,6 +292,16 @@ final class LibraryModel: ObservableObject {
         let keepWindow = snapshot.launcherWindowVisible
         let keepGame = snapshot.gameRunning
         DispatchQueue.global(qos: .utility).async {
+            try? library.activateStorage()
+            let storage = LibraryStorage()
+            let storageName = storage.displayName()
+            let storageIssue = storage.issue(mountContainers: false)
+            let storageUsesContainer = storage.usesContainer()
+            DispatchQueue.main.async {
+                self.storageName = storageName
+                self.storageIssue = storageIssue
+                self.storageUsesContainer = storageUsesContainer
+            }
             let filesOnly = runtime.fileSnapshot(
                 wineSessionLive: keepWineLive,
                 launcherReady: keepSteam,
@@ -348,6 +369,10 @@ final class LibraryModel: ObservableObject {
     func run(_ action: LibraryAction) {
         refreshHost()
         guard let library else { return }
+        if let storageIssue, action != .stop {
+            presentPopup(storageIssue, retry: false)
+            return
+        }
         if selected == nil, [.install, .uninstall, .play].contains(action) { return }
         // Cancel install / close the launcher: kill the session of that launcher.
         // Stop while a game is running: kill only the game (the launcher stays open).
@@ -365,7 +390,8 @@ final class LibraryModel: ObservableObject {
         backgroundReady = false
         // One raise after the click so Steam shows for install / sign-in / play.
         // Do not keep re-raising — that fights the user when they return to this app.
-        if Self.launcherFrontActions.contains(action) {
+        // RSI setup raises the installer window itself, after that window exists.
+        if Self.launcherFrontActions.contains(action), !(action == .setup && selected?.launcherKind == .rsi) {
             let wine = library.wine
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 WorkspaceFrontmost().bringToFront(executable: wine)
@@ -467,6 +493,103 @@ final class LibraryModel: ObservableObject {
         }
         run(.play)
     }
+
+    func refreshStorageState() {
+        let storage = LibraryStorage()
+        storageName = storage.displayName()
+        storageIssue = storage.issue(mountContainers: false)
+        storageUsesContainer = storage.usesContainer()
+    }
+
+    func chooseStorage(_ choice: StorageDestination) {
+        guard !busy, !homebrewBusy else { return }
+        showStoragePicker = false
+        busy = true
+        actionInFlight = true
+        storageProgress = 0
+        storageMessage = "Checking the location…"
+        activity = storageMessage
+        error = nil
+        popup = nil
+        let gate = StorageProgressGate()
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let kept = try LibraryStorage().use(choice: choice) { value, message in
+                    guard gate.allow(value, message) else { return }
+                    DispatchQueue.main.async {
+                        self.storageProgress = value
+                        self.storageMessage = message
+                        self.activity = message
+                        self.appendStatus(message)
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.storageMessage = ""
+                    self.endAction()
+                    self.refreshStorageState()
+                    self.applySelectedFileStatus()
+                    self.refreshInstalled()
+                    self.refresh()
+                    if let kept {
+                        self.appendStatus("Games are in the new location. The original copy is still at \(kept.path).")
+                    } else {
+                        self.appendStatus("Storage is set to this location.")
+                    }
+                }
+            } catch {
+                let message = (error as? PortError)?.message ?? error.localizedDescription
+                DispatchQueue.main.async {
+                    self.storageMessage = ""
+                    self.endAction()
+                    self.refreshStorageState()
+                    self.presentPopup(message, retry: false)
+                }
+            }
+        }
+    }
+
+    func ejectStorage() {
+        guard !busy, !homebrewBusy else { return }
+        busy = true
+        actionInFlight = true
+        activity = "Ejecting drive…"
+        appendStatus("Ejecting drive…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try LibraryStorage().eject()
+                DispatchQueue.main.async {
+                    self.showStoragePicker = false
+                    self.endAction()
+                    self.refreshStorageState()
+                    self.refresh()
+                    self.appendStatus("The drive is ready to unplug.")
+                }
+            } catch {
+                let message = (error as? PortError)?.message ?? error.localizedDescription
+                DispatchQueue.main.async {
+                    self.endAction()
+                    self.refreshStorageState()
+                    self.presentPopup(message, retry: false)
+                }
+            }
+        }
+    }
+}
+
+final class StorageProgressGate: @unchecked Sendable {
+    private var lastUpdate = Date.distantPast
+    private var lastMessage = ""
+    private let lock = NSLock()
+
+    func allow(_ value: Double, _ message: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        guard value == 1 || message != lastMessage || now.timeIntervalSince(lastUpdate) >= 0.1 else { return false }
+        lastUpdate = now
+        lastMessage = message
+        return true
+    }
 }
 
 struct AppPopup: Identifiable, Equatable {
@@ -540,6 +663,20 @@ struct LibraryView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     }
+                    if let issue = model.storageIssue {
+                        Text(issue)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button {
+                        model.showStoragePicker = true
+                    } label: {
+                        Label("Storage: \(model.storageName)", systemImage: "externaldrive")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(model.busy || model.homebrewBusy)
+                    .accessibilityIdentifier("storage-move")
                     Spacer()
                 }
                 .padding(24)
@@ -580,6 +717,9 @@ struct LibraryView: View {
                 )
             }
         }
+        .sheet(isPresented: $model.showStoragePicker) {
+            StoragePicker(model: model)
+        }
         .onAppear {
             model.start()
             for window in NSApp.windows {
@@ -607,7 +747,7 @@ struct LibraryView: View {
         if model.showsSessionProgress {
             sessionProgress
         }
-        if !model.showsSessionProgress, model.backgroundReady {
+        if !model.showsSessionProgress, model.backgroundReady, model.storageIssue == nil {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .imageScale(.large)
@@ -656,15 +796,28 @@ struct LibraryView: View {
         let signedIn = model.snapshot.isSignedIn
 
         if model.snapshot.needsSetup {
-            splitStep(
-                1,
-                status: "\(launcherName) is not installed",
-                done: false,
-                actionTitle: "Install \(launcherName)",
-                actionColor: StepColor.setup,
-                enabled: model.backgroundReady
-            ) {
-                model.run(.setup)
+            if model.busy && model.activity == "setup" {
+                splitStep(
+                    1,
+                    status: "Installing \(launcherName)…",
+                    done: false,
+                    actionTitle: "Stop \(launcherName)",
+                    actionColor: StepColor.danger,
+                    enabled: true
+                ) {
+                    model.stopLauncherSession()
+                }
+            } else {
+                splitStep(
+                    1,
+                    status: "\(launcherName) is not installed",
+                    done: false,
+                    actionTitle: "Install \(launcherName)",
+                    actionColor: StepColor.setup,
+                    enabled: model.backgroundReady
+                ) {
+                    model.run(.setup)
+                }
             }
         } else if launcherUp {
             splitStep(
@@ -858,7 +1011,7 @@ struct LibraryView: View {
 
     private static let stepFont = Font.title2.weight(.semibold)
     /// Keeps every action label the same width and the same font size.
-    private static let widestActionTitle = "Sign out of Battle.net"
+    private static let widestActionTitle = "Sign out of RSI Launcher"
 
     private func splitStep(
         _ number: Int,
@@ -869,7 +1022,8 @@ struct LibraryView: View {
         enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        let active = enabled && (!model.busy || actionTitle.hasPrefix("Stop") || actionTitle.hasPrefix("Sign out"))
+        let storageBlocks = model.storageIssue != nil && !actionTitle.hasPrefix("Stop")
+        let active = enabled && !storageBlocks && (!model.busy || actionTitle.hasPrefix("Stop") || actionTitle.hasPrefix("Sign out"))
         let statusColor = done ? StepColor.ready : StepColor.pending
         return HStack(spacing: 0) {
             HStack(spacing: 12) {

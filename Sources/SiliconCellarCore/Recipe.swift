@@ -3,11 +3,13 @@ import Foundation
 public enum Launcher: String, Codable, CaseIterable, Sendable {
     case steam
     case battleNet = "battlenet"
+    case rsi
 
     public var displayName: String {
         switch self {
         case .steam: return "Steam"
         case .battleNet: return "Battle.net"
+        case .rsi: return "RSI Launcher"
         }
     }
 
@@ -25,7 +27,8 @@ public enum Launcher: String, Codable, CaseIterable, Sendable {
         case .steam: return [:]
         // Battle.net's CEF 108 page renderers stop at V8's CHECK(old protection == PAGE_READWRITE) when they make
         // their flags read-only. Without this, Wine reports PAGE_WRITECOPY for DLL data pages that were written.
-        case .battleNet: return ["WINE_SIMULATE_WRITECOPY": "1"]
+        // The RSI Launcher is Electron. Its V8 check stops for the same reason.
+        case .battleNet, .rsi: return ["WINE_SIMULATE_WRITECOPY": "1"]
         }
     }
 }
@@ -35,10 +38,12 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
     public let title: String
     /// Steam app number. A recipe with it can use Steam.
     public let steamID: String?
-    /// Launcher to use. Without it, Steam when the recipe has `steamID`, else Battle.net.
+    /// Launcher to use. Without it, the first launcher in `supportedLaunchers` (Steam, then Battle.net, then RSI).
     public var launcher: Launcher?
     /// Battle.net product code for `--exec="launch <code>"` (for example `OSI`). A recipe with it can use Battle.net.
     public var battleNetProductCode: String?
+    /// Star Citizen channel folder (for example `LIVE`). A recipe with it can use the RSI Launcher.
+    public var rsiChannel: String?
     public let installFolder: String
     public let executable: String
     public var executableRelativePath: String?
@@ -111,6 +116,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         var launchers: [Launcher] = []
         if !steamAppID.isEmpty { launchers.append(.steam) }
         if let battleNetProductCode, !battleNetProductCode.isEmpty { launchers.append(.battleNet) }
+        if let rsiChannel, !rsiChannel.isEmpty { launchers.append(.rsi) }
         return launchers
     }
     public var launcherKind: Launcher { launcher ?? supportedLaunchers.first ?? .steam }
@@ -189,6 +195,13 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
                 battleNetProductCode.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
             else {
                 throw PortError("Recipe \(id) battleNetProductCode must be ASCII letters or numbers.")
+            }
+        }
+        if launcherKind == .rsi || rsiChannel != nil {
+            guard let rsiChannel, !rsiChannel.isEmpty,
+                rsiChannel.allSatisfy({ $0.isASCII && $0.isLetter })
+            else {
+                throw PortError("Recipe \(id) rsiChannel must be ASCII letters.")
             }
         }
         try Self.validateName(installFolder, field: "installFolder", id: id)

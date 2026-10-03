@@ -12,11 +12,11 @@ func printUsage() {
         """
         siliconcellar <command> [--game ID] [--data-root PATH] [--recipes PATH]
 
-        The game's launcher is Steam or Battle.net (see list). Steam is the default when a game has both.
+        The game's launcher is Steam, Battle.net, or the RSI Launcher (see list). Steam is the default when a game has more than one.
 
         Commands:
           list              Show recipes and the launchers they can use
-          launcher [--use steam|battlenet]
+          launcher [--use steam|battlenet|rsi]
                             Show the launcher of the game, or set it
           check             Show host and game status
           setup             Create the launcher prefix and install the launcher
@@ -68,7 +68,7 @@ do {
     if command == "launcher" {
         if let choice = argument("--use") {
             guard let launcher = Launcher(rawValue: choice) else {
-                throw PortError("Unknown launcher \"\(choice)\". Use steam or battlenet.")
+                throw PortError("Unknown launcher \"\(choice)\". Use steam, battlenet, or rsi.")
             }
             try library.setLauncher(launcher, gameID: gameID)
         }

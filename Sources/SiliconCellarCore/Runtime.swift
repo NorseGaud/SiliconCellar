@@ -13,8 +13,12 @@ public final class Runtime: @unchecked Sendable {
     private let display: DisplaySizing
     public var expectedSteamSetupSHA256: String = SteamInstaller.sha256
     public var expectedBattleNetSetupSHA256: String = BattleNetInstaller.sha256
+    public var expectedRSISetupSHA256: String = RSIInstaller.sha256
     public var steamBootstrapTimeout: TimeInterval = 1800
     public var battleNetSetupTimeout: TimeInterval = 1800
+    public var rsiSetupTimeout: TimeInterval = 1800
+    /// The RSI installer is about 327 MB. The default download limit is too short for it.
+    public var rsiInstallerDownloadTimeout: TimeInterval = 1800
     public var installTimeout: TimeInterval = 7200
     public var uninstallTimeout: TimeInterval = 1800
     public var installPollInterval: TimeInterval = 0.2
@@ -82,9 +86,13 @@ public final class Runtime: @unchecked Sendable {
         steamLibrary.appendingPathComponent("config/loginusers.vdf")
     }
     public var isSignedIn: Bool {
-        if recipe.launcherKind == .battleNet { return isBattleNetSignedIn }
-        guard files.fileExists(loginUsers), let data = try? files.read(loginUsers) else { return false }
-        return SteamLoginUsers.isSignedIn(String(decoding: data, as: UTF8.self))
+        switch recipe.launcherKind {
+        case .battleNet: return isBattleNetSignedIn
+        case .rsi: return isRSISignedIn
+        case .steam:
+            guard files.fileExists(loginUsers), let data = try? files.read(loginUsers) else { return false }
+            return SteamLoginUsers.isSignedIn(String(decoding: data, as: UTF8.self))
+        }
     }
 
     /// The launcher client files are in place (Steam: `steamui.dll`, Battle.net: `Battle.net.exe`).
@@ -92,6 +100,7 @@ public final class Runtime: @unchecked Sendable {
         switch recipe.launcherKind {
         case .steam: return files.fileExists(steamUI)
         case .battleNet: return battleNetClient != nil
+        case .rsi: return rsiClient != nil
         }
     }
 
@@ -118,6 +127,8 @@ public final class Runtime: @unchecked Sendable {
             return steamLibrary.appendingPathComponent("steamapps/common").appendingPathComponent(recipe.installFolder)
         case .battleNet:
             return programFiles.appendingPathComponent(recipe.installFolder)
+        case .rsi:
+            return rsiCompanyFolder.appendingPathComponent(recipe.installFolder)
         }
     }
 
@@ -154,7 +165,11 @@ public final class Runtime: @unchecked Sendable {
 
     /// File/manifest check only — does not wait on wineserver.
     public var isGameInstalled: Bool {
-        if recipe.launcherKind == .battleNet { return isBattleNetGameInstalled }
+        switch recipe.launcherKind {
+        case .battleNet: return isBattleNetGameInstalled
+        case .rsi: return isRSIGameInstalled
+        case .steam: break
+        }
         guard let game, files.fileExists(game), let manifest, files.fileExists(manifest),
             let data = try? files.read(manifest)
         else { return false }
@@ -176,6 +191,7 @@ public final class Runtime: @unchecked Sendable {
         switch recipe.launcherKind {
         case .steam: return steamClient.isFullyRunning(prefix: prefix)
         case .battleNet: return isBattleNetClientRunning
+        case .rsi: return isRSIClientRunning
         }
     }
 
@@ -374,11 +390,19 @@ public final class Runtime: @unchecked Sendable {
     public func setup() throws {
         removeLegacyData()
         try prepare()
-        if recipe.launcherKind == .battleNet {
+        switch recipe.launcherKind {
+        case .battleNet:
             try ensureBattleNetClient()
             try openBattleNet(gamePage: false)
             sink.say("Battle.net is ready. Sign in in the Battle.net window.")
             return
+        case .rsi:
+            try ensureRSIClient()
+            try openRSI()
+            sink.say("RSI Launcher is ready. Sign in in the RSI Launcher window.")
+            return
+        case .steam:
+            break
         }
         try ensureSteamClient()
         sink.say("Steam is ready. Sign in in the Steam window.")
@@ -389,11 +413,16 @@ public final class Runtime: @unchecked Sendable {
         switch recipe.launcherKind {
         case .steam: try openSteam(play: false)
         case .battleNet: try openBattleNet(gamePage: false)
+        case .rsi: try openRSI()
         }
     }
 
     public func logout() throws {
-        if recipe.launcherKind == .battleNet { return try logoutBattleNet() }
+        switch recipe.launcherKind {
+        case .battleNet: return try logoutBattleNet()
+        case .rsi: return try logoutRSI()
+        case .steam: break
+        }
         if isSessionLive {
             try openSteam(play: false)
             sink.say("Steam is open. Sign out in the Steam window.")
@@ -404,7 +433,11 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func installGame() throws {
-        if recipe.launcherKind == .battleNet { return try installBattleNetGame() }
+        switch recipe.launcherKind {
+        case .battleNet: return try installBattleNetGame()
+        case .rsi: return try installRSIGame()
+        case .steam: break
+        }
         if !files.fileExists(readyMarker) { try setup() }
         guard isSignedIn else {
             try openSteam(play: false)
@@ -420,7 +453,11 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func uninstallGame() throws {
-        if recipe.launcherKind == .battleNet { return try uninstallBattleNetGame() }
+        switch recipe.launcherKind {
+        case .battleNet: return try uninstallBattleNetGame()
+        case .rsi: return try uninstallRSIGame()
+        case .steam: break
+        }
         if !files.fileExists(readyMarker) { try setup() }
         guard isSignedIn else {
             try openSteam(play: false)
@@ -435,7 +472,11 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func playGame() throws {
-        if recipe.launcherKind == .battleNet { return try playBattleNetGame() }
+        switch recipe.launcherKind {
+        case .battleNet: return try playBattleNetGame()
+        case .rsi: return try playRSIGame()
+        case .steam: break
+        }
         try validateGameInstallation()
         try ensureSteamClient()
         try applyGameFixes()
@@ -967,8 +1008,8 @@ public final class Runtime: @unchecked Sendable {
 
     public func validateGameInstallation() throws {
         try recipe.validate()
-        if recipe.launcherKind == .battleNet, !isGameInstalled {
-            throw PortError("Install \(recipe.title) in the Battle.net window, then choose Play.")
+        if recipe.launcherKind != .steam, !isGameInstalled {
+            throw PortError("Install \(recipe.title) in the \(launcherName) window, then choose Play.")
         }
         guard isGameInstalled else {
             if game.map({ files.fileExists($0) }) != true {
@@ -1027,7 +1068,14 @@ public final class Runtime: @unchecked Sendable {
         )
     }
 
-    func downloadPinnedFile(name: String, url: String, expected: String, progress: String, mismatch: String) throws -> URL {
+    func downloadPinnedFile(
+        name: String,
+        url: String,
+        expected: String,
+        progress: String,
+        mismatch: String,
+        timeout: TimeInterval = 600
+    ) throws -> URL {
         let destination = downloads.appendingPathComponent(name)
         if files.fileExists(destination), let data = try? files.read(destination), SteamInstaller.digest(of: data) == expected {
             return destination
@@ -1040,11 +1088,11 @@ public final class Runtime: @unchecked Sendable {
             executable: URL(fileURLWithPath: "/usr/bin/curl"),
             arguments: [
                 "--fail", "--location", "--proto", "=https", "--proto-redir", "=https",
-                "--connect-timeout", "20", "--max-time", "600", "--retry", "2",
+                "--connect-timeout", "20", "--max-time", String(Int(timeout)), "--retry", "2",
                 "--output", partial.path, url,
             ],
             environment: ProcessInfo.processInfo.environment,
-            timeout: 650,
+            timeout: timeout + 50,
             workingDirectory: nil
         )
         let data = try files.read(partial)
@@ -1194,7 +1242,18 @@ public struct Library: @unchecked Sendable {
         self.frontmost = frontmost
     }
 
-    private var dataRoot: URL { dataRootOverride ?? AppPaths.supportRoot(home: home) }
+    private var storage: LibraryStorage { LibraryStorage(home: home) }
+
+    private var dataRoot: URL {
+        if let dataRootOverride { return dataRootOverride }
+        return storage.runtimeRoot()
+    }
+
+    /// Opens external storage when a drive is connected. `--data-root` keeps the path you pass.
+    public func activateStorage() throws {
+        if dataRootOverride != nil { return }
+        try storage.activate()
+    }
 
     private var launcherChoices: LauncherChoices {
         LauncherChoices(file: dataRoot.appendingPathComponent(LauncherChoices.fileName), files: files)
@@ -1251,10 +1310,12 @@ public struct Library: @unchecked Sendable {
     }
 
     public func removeLegacyData() {
+        if dataRootOverride == nil, storage.issue(mountContainers: false) != nil { return }
         runtime(for: recipes.first ?? Recipe.onboarding).removeLegacyData()
     }
 
     public func perform(_ action: LibraryAction, gameID: String) throws {
+        try activateStorage()
         try performLocked(gameID: gameID) { selected in
             switch action {
             case .check: try selected.check()

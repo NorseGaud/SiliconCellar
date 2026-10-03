@@ -1,0 +1,15 @@
+{
+  "id": "brink",
+  "title": "BRINK",
+  "steamID": "22350",
+  "launcher": "steam",
+  "installFolder": "BRINK",
+  "executable": "brink.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "renderer": "wine"
+}

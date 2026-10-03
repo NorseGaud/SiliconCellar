@@ -1,0 +1,12 @@
+{
+  "id": "star-citizen",
+  "title": "Star Citizen",
+  "launcher": "rsi",
+  "rsiChannel": "LIVE",
+  "installFolder": "StarCitizen",
+  "executable": "StarCitizen.exe",
+  "executableRelativePath": "LIVE/Bin64/StarCitizen.exe",
+  "wineWindowsVersion": "win10",
+  "environment": {},
+  "dllOverrides": "dxgi,d3d11,d3d12=n,b"
+}

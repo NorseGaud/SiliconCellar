@@ -19,6 +19,9 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
     var finishSteamUninstallOnStart = false
     var finishBattleNetInstallOnStart = false
     var finishBattleNetUninstallOnStart = false
+    var leaveRSIInstallerUnfinished = false
+    var finishRSIInstallOnStart = false
+    var finishRSIUninstallOnStart = false
     var installSeed = InstallSeed.standard
     var steamClient: FakeSteamClient?
 
@@ -113,6 +116,7 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
         }
         if let prefix = environment["WINEPREFIX"].map({ URL(fileURLWithPath: $0) }) {
             try fakeBattleNet(arguments: arguments, prefix: prefix)
+            try fakeRSI(arguments: arguments, prefix: prefix)
         }
         if arguments.contains(where: { $0.lowercased().hasSuffix("steam.exe") })
             || arguments.contains("explorer")
@@ -137,6 +141,24 @@ final class FakeCommands: CommandRunning, @unchecked Sendable {
         }
         if finishBattleNetUninstallOnStart {
             try? FileManager.default.removeItem(at: gameFolder)
+        }
+    }
+
+    private func fakeRSI(arguments: [String], prefix: URL) throws {
+        let programFiles = prefix.appendingPathComponent("drive_c/Program Files")
+        if arguments.first?.hasSuffix(RSIInstaller.launchFileName) == true, !leaveRSIInstallerUnfinished {
+            let client = programFiles.appendingPathComponent("Roberts Space Industries/RSI Launcher/RSI Launcher.exe")
+            try FileManager.default.createDirectory(at: client.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("rsi".utf8).write(to: client)
+        }
+        guard arguments.contains(where: { $0.hasSuffix("RSI Launcher.exe") }) else { return }
+        let game = programFiles.appendingPathComponent("Roberts Space Industries/StarCitizen/LIVE/Bin64/StarCitizen.exe")
+        if finishRSIInstallOnStart {
+            try FileManager.default.createDirectory(at: game.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("game".utf8).write(to: game)
+        }
+        if finishRSIUninstallOnStart {
+            try? FileManager.default.removeItem(at: game.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent())
         }
     }
 
@@ -1356,6 +1378,12 @@ final class RuntimeTests: XCTestCase {
         func bringGameWindowToFront(executable: URL, windowName: String, timeout: TimeInterval) {
             gameWindows.append((executable, windowName, timeout))
             activated.append(executable)
+        }
+        var namedWindows: [(URL, String)] = []
+        func raiseNamedWindow(executable: URL, windowName: String) -> Bool {
+            namedWindows.append((executable, windowName))
+            activated.append(executable)
+            return true
         }
     }
 
