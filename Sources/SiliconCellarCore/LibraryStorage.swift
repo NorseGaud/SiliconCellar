@@ -24,7 +24,9 @@ public struct StorageDestination: Identifiable, Sendable {
 /// The record stays in Application Support. An unplugged drive then does not look like a new install.
 /// Wine, recipes, and this record stay on the Mac. Prefixes, downloads, and saves move with the chosen folder.
 public struct LibraryStorage {
-    public static let folderName = "Silicon Cellar"
+    /// Spotlight does not index a folder whose name ends in `.noindex`. Game installs then do not fill the index.
+    public static let folderName = "Silicon Cellar.noindex"
+    static let olderFolderName = "Silicon Cellar"
     public static let markerName = ".siliconcellar-location.json"
     static let recordID = "library"
     static let reservedNames: Set<String> = ["Wine", "Recipes", "Storage"]
@@ -351,7 +353,8 @@ public struct LibraryStorage {
 
     private func activateUnlocked() throws {
         guard var record = try readRecord() else { return }
-        let root = try resolve(record, mountContainers: true)
+        var root = try resolve(record, mountContainers: true)
+        if record.container == nil, let renamed = renameOlderFolder(root) { root = renamed }
         guard record.path != root.path else { return }
         guard !StorageFiles.processesUse(root) else {
             throw PortError("Close the launcher before you use this drive under its new name.")
@@ -359,6 +362,20 @@ public struct LibraryStorage {
         try StorageTree.rebaseLinks(in: root, from: URL(fileURLWithPath: record.path))
         record.path = root.path
         try save(record: record, root: root)
+    }
+
+    /// Older builds named the drive folder without `.noindex`. The rename stays on the same drive, so no file is copied.
+    /// It waits until no launcher uses the folder.
+    private func renameOlderFolder(_ root: URL) -> URL? {
+        guard root.lastPathComponent == Self.olderFolderName, !isMetadata(root) else { return nil }
+        let renamed = root.deletingLastPathComponent().appendingPathComponent(Self.folderName, isDirectory: true)
+        guard !fm.fileExists(atPath: renamed.path), !StorageFiles.processesUse(root) else { return nil }
+        do {
+            try fm.moveItem(at: root, to: renamed)
+            return renamed
+        } catch {
+            return nil
+        }
     }
 
     private func ejectUnlocked() throws {

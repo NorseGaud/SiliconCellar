@@ -10,6 +10,8 @@ struct LibraryStorageContainer: Codable {
     let path: String
     static let imageName = "Library.sparsebundle"
     static let markerName = ".siliconcellar-container.json"
+    /// Spotlight does not index a volume with this file at its root.
+    static let spotlightOptOutName = ".metadata_never_index"
 
     func folder() throws -> URL {
         var stale = false
@@ -89,7 +91,10 @@ struct LibraryStorageContainer: Codable {
     func mount(store: LibraryStorage) throws -> URL {
         let image = try folder().appendingPathComponent(Self.imageName)
         let mount = mountPoint(in: store)
-        if let previous = try attachedMount(store: store) { return previous.appendingPathComponent("Library") }
+        if let previous = try attachedMount(store: store) {
+            Self.stopSpotlight(on: previous)
+            return previous.appendingPathComponent("Library")
+        }
         try StorageFiles.unlinked(mount)
         try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
         guard try FileManager.default.contentsOfDirectory(atPath: mount.path).isEmpty else {
@@ -105,7 +110,14 @@ struct LibraryStorageContainer: Codable {
         else {
             throw PortError("The storage image could not be checked.")
         }
+        Self.stopSpotlight(on: mount)
         return mount.appendingPathComponent("Library")
+    }
+
+    private static func stopSpotlight(on volume: URL) {
+        let file = volume.appendingPathComponent(spotlightOptOutName)
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        FileManager.default.createFile(atPath: file.path, contents: nil)
     }
 
     func attachedMount(store: LibraryStorage) throws -> URL? {
@@ -130,7 +142,11 @@ struct LibraryStorageContainer: Codable {
                 throw PortError("Close the launcher before you remove the old storage.")
             }
             let names = Set(try FileManager.default.contentsOfDirectory(atPath: mount.path))
-            guard names.isSubset(of: ["Library", ".fseventsd", ".Spotlight-V100", ".Trashes", ".TemporaryItems", ".DS_Store"]) else {
+            guard
+                names.isSubset(of: [
+                    "Library", ".fseventsd", ".Spotlight-V100", ".Trashes", ".TemporaryItems", ".DS_Store", Self.spotlightOptOutName,
+                ])
+            else {
                 throw PortError("Extra files were found beside the games. The old storage image was kept.")
             }
             _ = try StorageFiles.command("/usr/bin/hdiutil", ["detach", mount.path])

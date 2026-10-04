@@ -185,6 +185,8 @@ Choose **Storage: This Mac** in the window, or choose **Storage…** in the app 
 
 The default folder is `~/Library/Application Support/SiliconCellar`. You can keep the launcher prefixes on this Mac or on another APFS or ExFAT drive. The app records that drive on this Mac. Wine and recipes stay on this Mac. On an ExFAT drive, the games stay in a disk image, so Wine links keep working. Connect that drive before you play.
 
+Spotlight does not index the game files. On another drive the folder is `Silicon Cellar.noindex`. The app renames a `Silicon Cellar` folder from an older build when no launcher is open. The disk image on an ExFAT drive has a `.metadata_never_index` file. Spotlight does not index `~/Library` on this Mac.
+
 ## Flow
 
 **App:** Install Rosetta if it is missing. Launch `SiliconCellar.app` with a bundled Engine. The detail pane shows one action per row, in order: **Install Steam** / **Stop Steam**, **Sign in** / **Sign out of Steam**, **Install game** / **Uninstall**, **Play** / **Stop**. Each button swaps when the status changes. **Sign in** opens the Steam window. Sign in there. Silicon Cellar does not take an account name or password.

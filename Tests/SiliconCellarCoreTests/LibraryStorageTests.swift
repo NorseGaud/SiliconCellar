@@ -129,6 +129,10 @@ final class LibraryStorageTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("prefix/save.dat"), encoding: .utf8), "save")
         XCTAssertEqual(storage.displayName(), "SC_EXFAT")
         XCTAssertTrue(storage.usesContainer())
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.deletingLastPathComponent().appendingPathComponent(".metadata_never_index").path
+            ))
         _ = try StorageFiles.command("/usr/bin/hdiutil", ["detach", root.deletingLastPathComponent().path])
         _ = try StorageFiles.command("/usr/bin/hdiutil", ["detach", mount.path])
         XCTAssertNotNil(storage.issue())
@@ -149,6 +153,51 @@ final class LibraryStorageTests: XCTestCase {
         try original.write(to: marker)
         try storage.activate()
         XCTAssertNil(storage.issue())
+    }
+
+    func testDriveFolderNameStopsSpotlight() {
+        let folder = LibraryStorage.gameFolder(in: URL(fileURLWithPath: "/Volumes/Games"))
+        XCTAssertEqual(folder.path, "/Volumes/Games/Silicon Cellar.noindex")
+    }
+
+    func testActivateRenamesTheOldDriveFolderSoSpotlightSkipsIt() throws {
+        let prefix = storage.metadataRoot.appendingPathComponent("prefix")
+        try FileManager.default.createDirectory(at: prefix.appendingPathComponent("drive_c"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: prefix.appendingPathComponent("dosdevices"), withIntermediateDirectories: true)
+        try Data("save".utf8).write(to: prefix.appendingPathComponent("drive_c/save.dat"))
+        let oldFolder = home.appendingPathComponent("External/Silicon Cellar")
+        _ = try storage.use(choice: destinationChoice(oldFolder), headroom: 0)
+        let absoluteTarget = StorageFiles.canonical(oldFolder.appendingPathComponent("prefix/drive_c"))
+        try FileManager.default.createSymbolicLink(
+            atPath: oldFolder.appendingPathComponent("prefix/dosdevices/d:").path,
+            withDestinationPath: absoluteTarget
+        )
+
+        try storage.activate()
+
+        let newFolder = home.appendingPathComponent("External/Silicon Cellar.noindex")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldFolder.path))
+        XCTAssertEqual(StorageFiles.canonical(storage.runtimeRoot()), StorageFiles.canonical(newFolder))
+        XCTAssertEqual(try String(contentsOf: newFolder.appendingPathComponent("prefix/drive_c/save.dat"), encoding: .utf8), "save")
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: newFolder.appendingPathComponent("prefix/dosdevices/d:").path),
+            "../drive_c"
+        )
+        XCTAssertNil(storage.issue())
+    }
+
+    func testActivateKeepsTheOldDriveFolderWhenTheNewNameIsTaken() throws {
+        try FileManager.default.createDirectory(at: storage.metadataRoot.appendingPathComponent("prefix"), withIntermediateDirectories: true)
+        try Data("save".utf8).write(to: storage.metadataRoot.appendingPathComponent("prefix/save.dat"))
+        let oldFolder = home.appendingPathComponent("External/Silicon Cellar")
+        _ = try storage.use(choice: destinationChoice(oldFolder), headroom: 0)
+        let taken = home.appendingPathComponent("External/Silicon Cellar.noindex")
+        try FileManager.default.createDirectory(at: taken, withIntermediateDirectories: true)
+
+        try storage.activate()
+
+        XCTAssertEqual(StorageFiles.canonical(storage.runtimeRoot()), StorageFiles.canonical(oldFolder))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: taken.path), [])
     }
 
     func testLinkDestinationIsRejected() throws {
