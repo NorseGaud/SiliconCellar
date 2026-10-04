@@ -588,6 +588,22 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(SteamUIFocus.raiseOrder(windows), ["Steam", "Uninstall"])
     }
 
+    func testUninstallPromptCoversSteamGamesAndTheRSILauncher() {
+        let steam = UninstallPrompt.make(action: .uninstall, launcher: .steam, gameTitle: "Age of Empires II HD")
+        XCTAssertEqual(steam?.action, .uninstall)
+        XCTAssertEqual(steam?.title, "Uninstall Age of Empires II HD?")
+        XCTAssertEqual(steam?.message, "Steam removes Age of Empires II HD from this library. Steam stays installed.")
+
+        let launcher = UninstallPrompt.make(action: .uninstallLauncher, launcher: .rsi, gameTitle: "Star Citizen")
+        XCTAssertEqual(launcher?.action, .uninstallLauncher)
+        XCTAssertEqual(launcher?.title, "Uninstall the RSI Launcher?")
+        XCTAssertEqual(launcher?.message, "The RSI Launcher program is removed. The game files stay.")
+
+        XCTAssertNil(UninstallPrompt.make(action: .uninstall, launcher: .battleNet, gameTitle: "Diablo"))
+        XCTAssertNil(UninstallPrompt.make(action: .uninstall, launcher: .rsi, gameTitle: "Star Citizen"))
+        XCTAssertNil(UninstallPrompt.make(action: .uninstallLauncher, launcher: .steam, gameTitle: "Any"))
+    }
+
     func testOpenSteamRelaunchesBareSteamWhenSessionAlreadyLive() throws {
         let env = try makeEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }

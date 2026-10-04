@@ -1,0 +1,12 @@
+---
+description: Automate with scripts and code. Do not move the host mouse or send clicks and keystrokes.
+alwaysApply: true
+---
+
+# Host automation
+
+Do not move the mouse on the host. Do not click at screen coordinates. Do not send keystrokes.
+
+Automation is scripts and code: tests, the CLI, files, logs, and process checks. Drive Silicon Cellar and Wine through those.
+
+Do not use `CGEvent`, `cliclick`, `osascript` keystrokes, or System Events clicks to press buttons in Silicon Cellar, Wine, or another app.

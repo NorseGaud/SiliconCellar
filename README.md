@@ -189,7 +189,7 @@ Spotlight does not index the game files. On another drive the folder is `Silicon
 
 ## Flow
 
-**App:** Install Rosetta if it is missing. Launch `SiliconCellar.app` with a bundled Engine. The detail pane shows one action per row, in order: **Install Steam** / **Stop Steam**, **Sign in** / **Sign out of Steam**, **Install game** / **Uninstall**, **Play** / **Stop**. Each button swaps when the status changes. **Sign in** opens the Steam window. Sign in there. Silicon Cellar does not take an account name or password.
+**App:** Install Rosetta if it is missing. Launch `SiliconCellar.app` with a bundled Engine. The detail pane shows one action per row, in order: **Install Steam** / **Stop Steam**, **Sign in** / **Sign out of Steam**, **Install game** / **Uninstall**, **Play** / **Stop**. Each button swaps when the status changes. **Uninstall** for a Steam game asks you to confirm. Steam removes that game, and Steam stays installed. **Uninstall RSI Launcher** also asks you to confirm. It removes the RSI Launcher program, and the game files stay. **Sign in** opens the Steam window. Sign in there. Silicon Cellar does not take an account name or password.
 
 **CLI:** Install Rosetta. Use a packaged app Engine, or set `SILICONCELLAR_WINE` to a `wine` binary. Then:
 

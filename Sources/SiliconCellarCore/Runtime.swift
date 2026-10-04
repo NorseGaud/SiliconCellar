@@ -1315,6 +1315,33 @@ extension Runtime {
     }
 }
 
+/// Asks before an uninstall that the user can confuse with removing the wrong thing.
+/// A Steam game uninstall removes that game. An RSI Launcher uninstall removes the program, and the game files stay.
+public struct UninstallPrompt: Equatable, Sendable {
+    public let action: LibraryAction
+    public let title: String
+    public let message: String
+
+    public static func make(action: LibraryAction, launcher: Launcher, gameTitle: String) -> UninstallPrompt? {
+        switch (action, launcher) {
+        case (.uninstall, .steam):
+            return UninstallPrompt(
+                action: .uninstall,
+                title: "Uninstall \(gameTitle)?",
+                message: "Steam removes \(gameTitle) from this library. Steam stays installed."
+            )
+        case (.uninstallLauncher, .rsi):
+            return UninstallPrompt(
+                action: .uninstallLauncher,
+                title: "Uninstall the RSI Launcher?",
+                message: "The RSI Launcher program is removed. The game files stay."
+            )
+        default:
+            return nil
+        }
+    }
+}
+
 public enum LibraryAction: String, Sendable {
     case check
     case setup

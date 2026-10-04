@@ -88,6 +88,8 @@ final class LibraryModel: ObservableObject {
     private let launcherUpConfirmNeeded = 3
     /// False until the first process check for this game. The steps must not say Start before that.
     @Published var launcherSessionKnown = false
+    /// Set when Uninstall would remove a Steam game or the RSI Launcher. The dialog clears it.
+    @Published var uninstallPrompt: UninstallPrompt?
     private var gameWasRunning = false
     /// True from the click until `library.perform` returns. Stop can end `busy` only when this is false.
     private var actionInFlight = false
@@ -294,6 +296,7 @@ final class LibraryModel: ObservableObject {
         detailStatusReady = false
         launcherUpConfirmations = 0
         launcherSessionKnown = false
+        uninstallPrompt = nil
         applySelectedFileStatus(keepSession: false)
         refresh()
         refreshInstalled()
@@ -404,6 +407,25 @@ final class LibraryModel: ObservableObject {
     func applyLaunchProgress(_ progress: SteamLaunchProgress) {
         launchProgress = progress
         if !progress.detail.isEmpty { appendStatus(progress.detail) }
+    }
+
+    /// Shows a confirmation for a Steam game or the RSI Launcher. Other uninstall actions start at once.
+    func beginUninstall(_ action: LibraryAction) {
+        if let prompt = UninstallPrompt.make(
+            action: action,
+            launcher: selected?.launcherKind ?? .steam,
+            gameTitle: selected?.title ?? ""
+        ) {
+            uninstallPrompt = prompt
+            return
+        }
+        run(action)
+    }
+
+    func confirmUninstall() {
+        guard let action = uninstallPrompt?.action else { return }
+        uninstallPrompt = nil
+        run(action)
     }
 
     func run(_ action: LibraryAction) {
@@ -767,6 +789,21 @@ struct LibraryView: View {
                 window.titleVisibility = .visible
             }
         }
+        .confirmationDialog(
+            model.uninstallPrompt?.title ?? "",
+            isPresented: Binding(
+                get: { model.uninstallPrompt != nil },
+                set: { if !$0 { model.uninstallPrompt = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Uninstall", role: .destructive) {
+                model.confirmUninstall()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(model.uninstallPrompt?.message ?? "")
+        }
         .onChange(of: model.selectedID) { _, _ in
             model.handleSelectionChange()
         }
@@ -921,7 +958,7 @@ struct LibraryView: View {
                     actionColor: StepColor.danger,
                     enabled: model.backgroundReady
                 ) {
-                    model.run(.uninstallLauncher)
+                    model.beginUninstall(.uninstallLauncher)
                 }
             }
             if !launcherMissing, !model.launcherSessionKnown {
@@ -1107,7 +1144,7 @@ struct LibraryView: View {
                 actionColor: StepColor.danger,
                 enabled: launcherUp && signedIn
             ) {
-                model.run(.uninstall)
+                model.beginUninstall(.uninstall)
             }
             if model.snapshot.isRunning {
                 splitStep(
