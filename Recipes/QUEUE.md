@@ -2,12 +2,12 @@
 
 These 78 games are in the NorseGaud Steam account. They do not have a recipe and do not have a native macOS version. The list comes from the local Steam caches (`appcache/packageinfo.vdf` and `appcache/appinfo.vdf`) on 2026-10-01.
 
-For each game, make `Recipes/<id>.json` (see [Add a game](../README.md#add-a-game)), test it, and then change `[ ]` to `[x]`. The first executable is the default Steam launch option. The other executables are alternative launch options.
+For each game, make `Recipes/<id>.json` (see [Add a game](../README.md#add-a-game)), test it, and then change `[ ]` to `[x]`. The first executable is the default Steam launch option. The other executables are alternative launch options. When the recipe needs more than that launch, write the tweaks in [`notes/<id>.md`](notes/README.md) and link that file from the queue line.
 
-- [x] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`. The recipe starts `AoK HD.exe` directly, passes `SKIPINTRO`, and writes `steam_appid.txt` for app `221380`.
-- [x] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`. The recipe starts `bin/age3.exe`. Play unpacks `mfc42.dll` beside that executable so the CD-key check can load.
-- [x] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`. The recipe starts `AssassinsCreed_Dx9.exe` directly. It uses DirectX 9. It does not use DirectX 10.
-- [x] **BRINK**: Steam ID `22350`, install folder `BRINK`, executable `brink.exe`. Play adjusts `brink.exe` for the Mac OpenGL driver. The version test accepts 2.0. The missing `GL_EXT_texture3D` name is skipped. The texture record keeps the sized format the driver stores (`DEPTH_COMPONENT24` becomes `DEPTH_COMPONENT32`, and unsized `RGB`/`RGBA` become `RGB8`/`RGBA8`). Buffer 0 uses `glColorMask` because `glColorMaski` is absent. The driver compiles GLSL 1.20 only, so `brink.exe` loads `brinkglsl.dll` (`scripts/brink-glsl.c`), which rewrites the GLSL 1.30 shaders to GLSL 1.20. A fragment output array maps onto `gl_FragData`, so the material shaders compile. `base/autoexec.cfg` sets full screen to the full display frame so the window covers the Mac menu bar. The 3D view draws at half of that size, and occlusion queries stay off, so the frame rate stays usable.
+- [x] **Age of Empires II (2013)**: Steam ID `221380`, install folder `Age2HD`, executable `Launcher.exe`. Tweaks: [notes/aoe2-hd.md](notes/aoe2-hd.md).
+- [x] **Age of Empires® III (2007)**: Steam ID `105450`, install folder `Age Of Empires 3`, executable `bin/age3.exe`, `bin/age3x.exe`, `bin/age3y.exe`. Tweaks: [notes/aoe3-2007.md](notes/aoe3-2007.md).
+- [x] **Assassin's Creed**: Steam ID `15100`, install folder `Assassins Creed`, executable `AssassinsCreed_Game.exe`. Tweaks: [notes/assassins-creed.md](notes/assassins-creed.md).
+- [x] **BRINK**: Steam ID `22350`, install folder `BRINK`, executable `brink.exe`. Tweaks: [notes/brink.md](notes/brink.md).
 - [ ] **Brothers - A Tale of Two Sons**: Steam ID `225080`, install folder `Brothers - A Tale of Two Sons`, executable `Binaries/Win32/Brothers.exe`, `Binaries/Win32/BrothersLauncher.exe`
 - [ ] **Call of Duty: Modern Warfare 2 (2009) - Multiplayer**: Steam ID `10190`, install folder `Call of Duty Modern Warfare 2`, executable `iw4mp.exe`
 - [ ] **Call of Juarez Gunslinger**: Steam ID `204450`, install folder `CoJ Gunslinger`, executable `CoJGunslinger.exe`

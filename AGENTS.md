@@ -14,8 +14,8 @@ Automation is scripts and code: tests, the CLI, files, logs, and process checks.
 2. Copy the recipe of a similar game. Follow [Add a game](README.md#add-a-game). The field list with comments is `Recipe` in `Sources/SiliconCellarCore/Recipe.swift`.
 3. Add the game to README "Supported games" with `[ ]`. `make test` (`testReadmeListsEveryBundledGame`) fails without it. Do not add the ID to a test list.
 4. Run `swift test --filter testBundledRecipesValidate`. `make dev` reloads the recipe.
-5. When the user confirms that the game plays, mark it `[x]` in README "Supported games" and in `Recipes/QUEUE.md`. Write the fix on the queue line when the recipe needs more than the default launch.
-6. If the game fails, read [Known patterns](#known-patterns) and the fixes on the done lines of `Recipes/QUEUE.md` first.
+5. When the user confirms that the game plays, mark it `[x]` in README "Supported games" and in `Recipes/QUEUE.md`. When the recipe needs more than the default launch, write `Recipes/notes/<id>.md`. Link that file from the queue line.
+6. If the game fails, read [Known patterns](#known-patterns) and [`Recipes/notes`](Recipes/notes/README.md) first.
 
 ## Add a launcher
 
@@ -47,7 +47,7 @@ These fixes worked before. Try them before a new investigation. Do not search ol
 
 Release notes say that a game is supported. Name the game. When two editions exist, name the edition. Do not explain the fix.
 
-Write the fix on that game's line in [`Recipes/QUEUE.md`](Recipes/QUEUE.md), or in the docs, when the recipe does not follow the default launch of its launcher or needs another special step.
+When the recipe does not follow the default launch of its launcher, or needs another special step, write `Recipes/notes/<id>.md`. Use the sections in [Recipes/notes/README.md](Recipes/notes/README.md). Do not explain the fix in the release notes.
 
 ## X post
 

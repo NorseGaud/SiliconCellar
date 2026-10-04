@@ -183,6 +183,20 @@ final class RecipeStoreTests: XCTestCase {
         return Set(fileNames.filter { $0.hasSuffix(".json") }.map { String($0.dropLast(".json".count)) })
     }
 
+    func testGameNotesMatchARecipe() throws {
+        let notes = Self.recipesDirectory.appendingPathComponent("notes")
+        let fileNames = try FileManager.default.contentsOfDirectory(atPath: notes.path)
+        let recipeIDs = try Self.recipeFileIDs()
+        let noteIDs = Set(fileNames.filter { $0.hasSuffix(".md") && $0 != "README.md" }.map { String($0.dropLast(".md".count)) })
+        XCTAssertEqual(noteIDs.subtracting(recipeIDs), [])
+        for name in fileNames where name.hasSuffix(".md") {
+            let text = try String(contentsOf: notes.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertTrue(text.contains("**Symptom.**") || name == "README.md")
+            XCTAssertTrue(text.contains("**Change.**") || name == "README.md")
+            XCTAssertTrue(text.contains("**Reuse.**") || name == "README.md")
+        }
+    }
+
     func testReadmeListsEveryBundledGame() throws {
         let readme = try String(contentsOf: Self.repositoryRoot.appendingPathComponent("README.md"), encoding: .utf8)
         let unlisted = try Self.recipeFileIDs()

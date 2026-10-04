@@ -97,7 +97,7 @@ For daily UI work, run `make dev`. That builds SiliconCellar, wraps it in `.buil
 2. Copy the recipe of a similar game (same launcher, same era of DirectX), or `Recipes/spacewar.json`. Change the fields.
 3. Put the file in `Recipes/`. The `id` must match the file name. For a personal recipe that stays out of git, use `~/Library/Application Support/SiliconCellar/Recipes/`.
 4. Add the game to [Supported games](#supported-games) with `[ ]`. `make test` fails if a recipe in `Recipes/` is not in that list.
-5. Install and play the game. When it plays, change `[ ]` to `[x]` in Supported games, and mark its line in [`Recipes/QUEUE.md`](Recipes/QUEUE.md) with `[x]`. If the recipe needs more than the Steam default launch, write the fix on that queue line.
+5. Install and play the game. When it plays, change `[ ]` to `[x]` in Supported games, and mark its line in [`Recipes/QUEUE.md`](Recipes/QUEUE.md) with `[x]`. If the recipe needs more than the default launch, write `Recipes/notes/<id>.md`. See [Recipes/notes/README.md](Recipes/notes/README.md).
 
 ```json
 {
