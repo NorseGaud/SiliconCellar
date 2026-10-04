@@ -695,6 +695,9 @@ struct LibraryView: View {
                             title: recipe.title,
                             subtitle: recipe.launcherKind == .steam ? "Steam app \(recipe.steamAppID)" : recipe.launcherKind.displayName
                         )
+                        if recipe.id == "star-citizen" {
+                            starCitizenNotFunctionalNote
+                        }
                         if recipe.supportedLaunchers.count > 1 {
                             launcherPicker(for: recipe)
                         }
@@ -1231,6 +1234,18 @@ struct LibraryView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(StepColor.pending, in: Capsule())
+    }
+
+    /// Easy Anti-Cheat has no macOS Wine module. The game installs, then the launch stops.
+    private var starCitizenNotFunctionalNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("Star Citizen is not functional yet. Easy Anti-Cheat does not load. The game does not start.")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.body)
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func detailHeader(title: String, subtitle: String?) -> some View {
