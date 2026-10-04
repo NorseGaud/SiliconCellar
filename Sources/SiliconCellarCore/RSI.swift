@@ -17,6 +17,23 @@ public enum RSIInstaller {
     /// NSIS `/D=` path. It must be the last installer argument.
     public static let windowsInstallPath = "C:\\Program Files\\Roberts Space Industries\\RSI Launcher"
     public static let companyFolderName = "Roberts Space Industries"
+
+    /// Silicon Cellar cannot press Install in the RSI Launcher. The player does that.
+    /// The launcher's default folder already ends with the channel, for example LIVE.
+    public static func manualInstallInstructions(
+        gameTitle: String,
+        installFolder: String,
+        channel: String?
+    ) -> String {
+        let channelSuffix: String
+        if let channel, !channel.isEmpty {
+            channelSuffix = "\\\(channel)"
+        } else {
+            channelSuffix = ""
+        }
+        let defaultFolder = "C:\\Program Files\\\(companyFolderName)\\\(installFolder)\(channelSuffix)"
+        return "Install \(gameTitle) manually. Click Install in the RSI Launcher window. Keep the default folder: \(defaultFolder)."
+    }
     public static let clientFileName = "RSI Launcher.exe"
     /// Written after the program files. It shows that the copy finished.
     public static let uninstallerFileName = "Uninstall RSI Launcher.exe"
@@ -193,7 +210,9 @@ extension Runtime {
 
     /// Under Wine, Chromium's GPU process cannot draw into the window of the Electron process.
     /// The window stays blank. In-process GPU draws in the process that owns the window.
-    static let rsiChromiumSwitches = ["--in-process-gpu"]
+    /// GPU compositing draws the moving background and the text as separate layers. One frame
+    /// then shows the background without the text. Software compositing flattens them first.
+    static let rsiChromiumSwitches = ["--disable-gpu-compositing", "--in-process-gpu"]
 
     func ensureRSIClient() throws {
         if rsiInstallFilesReady { return }
@@ -386,7 +405,23 @@ extension Runtime {
         return RSIProcess.isInstallerRunning(in: list) ? .running : .stopped
     }
 
+    /// The launcher creates this folder with an administrator command. Wine does not grant that command.
+    /// The launcher skips the command when the folder is already there.
+    func ensureRSIChannelFolder() throws {
+        guard let channel = recipe.rsiChannel, !channel.isEmpty else { return }
+        let folder =
+            rsiCompanyFolder
+            .appendingPathComponent(recipe.installFolder)
+            .appendingPathComponent(channel)
+        if files.fileExists(folder) { return }
+        try files.createDirectory(folder)
+        sink.say(
+            "The RSI Launcher cannot create the game folder. Silicon Cellar creates it: \(rsiGameWindowsFolder)\\\(channel)."
+        )
+    }
+
     func openRSI() throws {
+        try ensureRSIChannelFolder()
         guard files.fileExists(readyMarker), let client = rsiClient else {
             throw PortError("Install the RSI Launcher before you open it.")
         }
@@ -428,8 +463,12 @@ extension Runtime {
         try openRSI()
         sink.say(
             isSignedIn
-                ? "Click Install for \(recipe.title) in the RSI Launcher window. Use this folder: \(rsiGameWindowsFolder)."
-                : "Sign in in the RSI Launcher window, then install \(recipe.title) in \(rsiGameWindowsFolder)."
+                ? RSIInstaller.manualInstallInstructions(
+                    gameTitle: recipe.title,
+                    installFolder: recipe.installFolder,
+                    channel: recipe.rsiChannel
+                )
+                : "Sign in in the RSI Launcher window. \(RSIInstaller.manualInstallInstructions(gameTitle: recipe.title, installFolder: recipe.installFolder, channel: recipe.rsiChannel))"
         )
         try waitForLauncherWork(timeout: installTimeout, work: "installing") { isRSIGameInstalled }
         sink.say("RSI Launcher finished installing \(recipe.title).")

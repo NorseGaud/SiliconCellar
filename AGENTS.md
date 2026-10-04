@@ -2,6 +2,12 @@
 
 Repo map: [CONTRIBUTING.md#project-layout](CONTRIBUTING.md#project-layout). Logs, prefixes, and Wine traces: [CONTRIBUTING.md#debugging](CONTRIBUTING.md#debugging).
 
+## Host automation
+
+Do not move the mouse on the host. Do not click at screen coordinates. Do not send keystrokes.
+
+Automation is scripts and code: tests, the CLI, files, logs, and process checks. Drive Silicon Cellar and Wine through those. A pointer click, a coordinate click, or a keystroke on the host is not automation.
+
 ## Add a game
 
 1. `scripts/steam-app-info.py <Steam app ID>` prints `installFolder` and the launch executables. Do not write a new Steam cache reader.

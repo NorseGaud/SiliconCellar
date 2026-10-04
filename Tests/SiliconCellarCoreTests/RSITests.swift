@@ -55,7 +55,7 @@ extension RuntimeTests {
         XCTAssertTrue(env.sink.messages.contains("The RSI Launcher does not need the .NET Framework download. Setup skips it."))
         XCTAssertEqual(
             env.commands.started.last?.1,
-            [try XCTUnwrap(env.runtime.rsiClient).path, "--in-process-gpu"]
+            [try XCTUnwrap(env.runtime.rsiClient).path] + Runtime.rsiChromiumSwitches
         )
         XCTAssertEqual(env.frontmost.namedWindows.first?.1, RSIInstaller.windowTitle)
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .signIn)
@@ -128,6 +128,33 @@ extension RuntimeTests {
         XCTAssertEqual(env.runtime.fileSnapshot().stage, .ready)
     }
 
+    func testRSIOpenCreatesTheChannelFolder() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try env.runtime.setup()
+        let channel = env.runtime.prefix.appendingPathComponent(
+            "drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE"
+        )
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: channel.path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertTrue(
+            env.sink.messages.contains {
+                $0.contains("C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE")
+            })
+    }
+
+    func testRSICancelInstallLeavesTheLauncherRunning() throws {
+        let env = try makeRSIEnvironment()
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        let library = makeLibrary(env, recipes: [Self.rsiRecipe])
+        let waiting = library.runtime(for: Self.rsiRecipe)
+        XCTAssertNoThrow(try waiting.pauseBetweenPolls(0))
+        try library.cancelInstallWait(gameID: Self.rsiRecipe.id)
+        XCTAssertThrowsError(try waiting.pauseBetweenPolls(0)) { XCTAssertTrue($0 is LauncherStopped) }
+        XCTAssertFalse(env.commands.ran.contains { $0.name == "wineserver" && $0.arguments == ["-k"] })
+    }
+
     func testRSIInstallOpensTheLauncherAndWaits() throws {
         let env = try makeRSIEnvironment()
         defer { try? FileManager.default.removeItem(at: env.root) }
@@ -137,7 +164,12 @@ extension RuntimeTests {
         XCTAssertEqual(env.commands.started.last?.1.last, "--in-process-gpu")
         XCTAssertTrue(
             env.sink.messages.contains {
-                $0.contains("C:\\Program Files\\Roberts Space Industries\\StarCitizen")
+                $0.contains(
+                    RSIInstaller.manualInstallInstructions(
+                        gameTitle: Self.rsiRecipe.title,
+                        installFolder: Self.rsiRecipe.installFolder,
+                        channel: Self.rsiRecipe.rsiChannel
+                    ))
             })
 
         env.commands.finishRSIInstallOnStart = false
@@ -160,7 +192,7 @@ extension RuntimeTests {
             })
         XCTAssertEqual(
             env.commands.started.last?.1,
-            [try XCTUnwrap(env.runtime.rsiClient).path, "--in-process-gpu"]
+            [try XCTUnwrap(env.runtime.rsiClient).path] + Runtime.rsiChromiumSwitches
         )
         XCTAssertEqual(env.commands.lastStartEnvironment["WINEPREFIX"], env.runtime.prefix.path)
     }

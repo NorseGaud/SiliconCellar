@@ -72,6 +72,36 @@ public enum WineHost {
             self.executable = executable
             self.bundle = bundle
         }
+
+        public init(_ app: NSRunningApplication) {
+            self.init(executable: app.executableURL, bundle: app.bundleURL)
+        }
+    }
+
+    /// Paths of one Wine executable. They are resolved one time for a check of all running apps.
+    private struct WineProcessMatcher {
+        let launcherFolderPath: String?
+        let wineExecutable: URL
+        let runtimeRootPath: String?
+
+        init(wineExecutable: URL) {
+            let launcherFolder = WineHost.applicationBundle(containing: wineExecutable)?
+                .appendingPathComponent("Contents/MacOS")
+            launcherFolderPath = launcherFolder?.path
+            self.wineExecutable = wineExecutable.standardizedFileURL
+            runtimeRootPath = WineHost.wineRuntimeRoot(containing: wineExecutable)?.path
+        }
+
+        func matches(_ running: RunningApp) -> Bool {
+            let paths = [running.executable, running.bundle].compactMap { $0?.standardizedFileURL }
+            guard !paths.isEmpty else { return false }
+            if let launcherFolderPath, paths.contains(where: { $0.path.hasPrefix(launcherFolderPath) }) {
+                return false
+            }
+            if paths.contains(wineExecutable) { return true }
+            guard let runtimeRootPath else { return false }
+            return paths.contains { $0.path.hasPrefix(runtimeRootPath) }
+        }
     }
 
     public static func applicationBundle(containing executable: URL) -> URL? {
@@ -86,7 +116,13 @@ public enum WineHost {
     }
 
     public static func appsToActivate(wineExecutable: URL, running: [RunningApp]) -> [RunningApp] {
-        running.filter { isWineProcess(wineExecutable: wineExecutable, running: $0) }
+        let matcher = WineProcessMatcher(wineExecutable: wineExecutable)
+        return running.filter(matcher.matches)
+    }
+
+    public static func wineProcessIDs(wineExecutable: URL, running: [(pid: Int32, app: RunningApp)]) -> Set<Int32> {
+        let matcher = WineProcessMatcher(wineExecutable: wineExecutable)
+        return Set(running.filter { matcher.matches($0.app) }.map(\.pid))
     }
 
     /// Steam UI windows belong to steamwebhelper-valve.exe. steam.exe has no windows: if it is
@@ -97,14 +133,7 @@ public enum WineHost {
     }
 
     public static func isWineProcess(wineExecutable: URL, running: RunningApp) -> Bool {
-        let paths = [running.executable, running.bundle].compactMap { $0?.standardizedFileURL }
-        guard !paths.isEmpty else { return false }
-        if let launcher = applicationBundle(containing: wineExecutable)?.appendingPathComponent("Contents/MacOS") {
-            if paths.contains(where: { $0.path.hasPrefix(launcher.path) }) { return false }
-        }
-        if paths.contains(wineExecutable.standardizedFileURL) { return true }
-        guard let root = wineRuntimeRoot(containing: wineExecutable) else { return false }
-        return paths.contains { $0.path.hasPrefix(root.path) }
+        WineProcessMatcher(wineExecutable: wineExecutable).matches(running)
     }
 
     public static func wineRuntimeRoot(containing executable: URL) -> URL? {
@@ -268,13 +297,8 @@ public struct WorkspaceFrontmost: FrontmostActivating {
     @discardableResult
     private func activateNow(executable: URL, raiseLargestWindow: Bool = true) -> Bool {
         let work = {
-            let running = NSWorkspace.shared.runningApplications.map {
-                WineHost.RunningApp(executable: $0.executableURL, bundle: $0.bundleURL)
-            }
-            let wanted = WineHost.appsToActivate(wineExecutable: executable, running: running)
-            let candidates = NSWorkspace.shared.runningApplications.filter {
-                wanted.contains(WineHost.RunningApp(executable: $0.executableURL, bundle: $0.bundleURL))
-            }
+            let wanted = SteamUIFocus.wineProcessIDs(for: executable)
+            let candidates = NSWorkspace.shared.runningApplications.filter { wanted.contains($0.processIdentifier) }
             // Game focus raises its own titled window; the largest window there is often Steam.
             let windowOwner = raiseLargestWindow ? SteamUIFocus.largestVisibleWineWindowOwner(for: executable) : nil
             let targets = WineHost.activationTargets(
@@ -316,16 +340,9 @@ public enum SteamUIFocus {
     }
 
     public static func wineProcessIDs(for wineExecutable: URL) -> Set<Int32> {
-        let running = NSWorkspace.shared.runningApplications.map {
-            WineHost.RunningApp(executable: $0.executableURL, bundle: $0.bundleURL)
-        }
-        return Set(
-            NSWorkspace.shared.runningApplications.compactMap { app -> Int32? in
-                let ref = WineHost.RunningApp(executable: app.executableURL, bundle: app.bundleURL)
-                return WineHost.appsToActivate(wineExecutable: wineExecutable, running: running).contains(ref)
-                    ? app.processIdentifier
-                    : nil
-            }
+        WineHost.wineProcessIDs(
+            wineExecutable: wineExecutable,
+            running: NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, WineHost.RunningApp($0)) }
         )
     }
 
@@ -341,8 +358,7 @@ public enum SteamUIFocus {
     /// True when the frontmost macOS app is a Wine host process for this runtime.
     public static func isWineFrontmost(for wineExecutable: URL) -> Bool {
         guard let front = NSWorkspace.shared.frontmostApplication else { return false }
-        let ref = WineHost.RunningApp(executable: front.executableURL, bundle: front.bundleURL)
-        return WineHost.isWineProcess(wineExecutable: wineExecutable, running: ref)
+        return WineHost.isWineProcess(wineExecutable: wineExecutable, running: WineHost.RunningApp(front))
     }
 
     public struct WindowArea: Equatable, Sendable {

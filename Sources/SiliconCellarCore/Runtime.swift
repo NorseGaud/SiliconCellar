@@ -175,17 +175,27 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public var isSessionLive: Bool {
-        // Never call `wineserver -w` for polling — a cold launch often exceeds the short
-        // timeout and falsely reports live, flipping Start Steam ↔ Steam is running.
-        guard let text = ProcessSteamClientInspector.processList(commands: commands),
-            WineSessionProcess.isWineserverRunning(in: text, wineserver: wineserver)
-        else {
+        sessionIsLive(processList: ProcessSteamClientInspector.processList(commands: commands))
+    }
+
+    /// Never call `wineserver -w` for polling. A cold launch often exceeds the short
+    /// timeout and falsely reports live, flipping Start Steam ↔ Steam is running.
+    private func sessionIsLive(processList: String?) -> Bool {
+        guard let processList, WineSessionProcess.isWineserverRunning(in: processList, wineserver: wineserver) else {
             return false
         }
         // The process list does not show which prefix a wineserver serves, so look for the socket of this prefix.
         if isWineServerRunning(prefix: prefix) { return true }
         // No socket for any launcher (for example Wine uses another server folder): any Engine wineserver counts.
         return !Launcher.allCases.contains { isWineServerRunning(prefix: prefix(for: $0)) }
+    }
+
+    private func launcherClientIsRunning(in processList: String) -> Bool {
+        switch recipe.launcherKind {
+        case .steam: return SteamClientProcess.isFullyRunning(in: processList, prefix: prefix)
+        case .battleNet: return BattleNetProcess.isClientRunning(in: processList)
+        case .rsi: return RSIProcess.isClientRunning(in: processList)
+        }
     }
 
     private func isWineServerRunning(prefix: URL) -> Bool {
@@ -278,11 +288,13 @@ public final class Runtime: @unchecked Sendable {
     }
 
     public func inspectSession(now: Date = Date()) -> (LibrarySnapshot, SteamLaunchProgress) {
-        let live = isSessionLive
+        // One process list. Separate checks each run `ps` and the first page waits on all of them.
+        let processes = ProcessSteamClientInspector.processList(commands: commands)
+        let live = sessionIsLive(processList: processes)
         // Launcher ready only while wineserver is live — ignore dying steam.exe orphans.
-        let ready = live && isLauncherClientRunning
+        let ready = live && processes.map(launcherClientIsRunning(in:)) ?? false
         let windowVisible = ready && SteamUIFocus.hasVisibleWineWindow(for: wine)
-        let running = isGameRunning
+        let running = processes.map { GameProcess.isRunning(executable: recipe.executable, in: $0) } ?? false
         // Steam client updates can drop a new cef.win64 helper mid-session; keep the wrap applied.
         if live { try? ensureSteamWebHelperWrapper() }
         return (
@@ -1409,6 +1421,11 @@ public struct Library: @unchecked Sendable {
     /// Stops the launcher of this game and its games. The other launcher keeps running.
     public func stopSession(gameID: String) throws {
         stopSession(of: runtime(for: try recipe(id: gameID)))
+    }
+
+    /// Ends the install wait for this game. The launcher process stays open.
+    public func cancelInstallWait(gameID: String) throws {
+        stopRequests.request(runtime(for: try recipe(id: gameID)).recipe.launcherKind)
     }
 
     private func stopSession(of launcherRuntime: Runtime) {

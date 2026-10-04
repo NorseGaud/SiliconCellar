@@ -551,6 +551,22 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(chosen, [running[1]])
     }
 
+    func testWineHostFindsProcessIDsOfWineApps() {
+        let wine = URL(fileURLWithPath: "/tmp/Wine Staging.app/Contents/Resources/wine/bin/wine")
+        let unix = URL(fileURLWithPath: "/tmp/Wine Staging.app/Contents/Resources/wine/lib/wine/x86_64-unix/wine")
+        let launcher = URL(fileURLWithPath: "/tmp/Wine Staging.app/Contents/MacOS/wine")
+        let staging = URL(fileURLWithPath: "/tmp/Wine Staging.app")
+        let finder = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder")
+        let running: [(pid: Int32, app: WineHost.RunningApp)] = [
+            (101, WineHost.RunningApp(executable: launcher, bundle: staging)),
+            (102, WineHost.RunningApp(executable: unix, bundle: unix)),
+            (103, WineHost.RunningApp(executable: wine, bundle: nil)),
+            (104, WineHost.RunningApp(executable: finder, bundle: nil)),
+            (105, WineHost.RunningApp(executable: nil, bundle: nil)),
+        ]
+        XCTAssertEqual(WineHost.wineProcessIDs(wineExecutable: wine, running: running), [102, 103])
+    }
+
     func testWineHostActivatesOnlySteamWindowOwner() {
         let steamExe: Int32 = 8750
         let steamWebHelper: Int32 = 9868

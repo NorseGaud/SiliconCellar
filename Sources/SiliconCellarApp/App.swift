@@ -83,9 +83,11 @@ final class LibraryModel: ObservableObject {
     private var timer: Timer?
     private var refreshInFlight = false
     private var refreshAgain = false
-    /// Consecutive Steam-up polls before UI shows "Steam is running" (avoids orphan flicker).
+    /// Polls that saw the launcher window. The first look accepts an already-open window at once.
     private var launcherUpConfirmations = 0
     private let launcherUpConfirmNeeded = 3
+    /// False until the first process check for this game. The steps must not say Start before that.
+    @Published var launcherSessionKnown = false
     private var gameWasRunning = false
     /// True from the click until `library.perform` returns. Stop can end `busy` only when this is false.
     private var actionInFlight = false
@@ -119,6 +121,19 @@ final class LibraryModel: ObservableObject {
         refresh()
     }
 
+    /// Stop waiting for the game install. The RSI Launcher stays open. Steam and Battle.net still close,
+    /// because that is how their download stops.
+    func cancelGameInstall() {
+        if selected?.launcherKind == .rsi {
+            try? library?.cancelInstallWait(gameID: selected?.id ?? Recipe.onboarding.id)
+            appendStatus("Install cancelled. The RSI Launcher stays open.")
+            if !actionInFlight { endAction() }
+            refresh()
+            return
+        }
+        stopLauncherSession()
+    }
+
     private func endAction() {
         actionInFlight = false
         busy = false
@@ -137,6 +152,7 @@ final class LibraryModel: ObservableObject {
         }
         recipes = recipes.map { $0.id == recipe.id ? $0.using(launcher) : $0 }
         launcherUpConfirmations = 0
+        launcherSessionKnown = false
         appendStatus("\(recipe.title) uses \(launcher.displayName).")
         handleSelectionChange()
     }
@@ -248,16 +264,17 @@ final class LibraryModel: ObservableObject {
     }
 
     /// Sync disk status for the selected game so steps do not flash the wrong action.
-    func applySelectedFileStatus() {
+    /// A new game does not keep the previous launcher session. That session belongs to another prefix.
+    func applySelectedFileStatus(keepSession: Bool = true) {
         guard let library else {
             detailStatusReady = false
             return
         }
         let recipe = selected ?? Recipe.onboarding
-        let keepLive = snapshot.wineSessionLive
-        let keepSteam = snapshot.launcherReady
-        let keepWindow = snapshot.launcherWindowVisible
-        let keepGame = snapshot.gameRunning
+        let keepLive = keepSession && snapshot.wineSessionLive
+        let keepSteam = keepSession && snapshot.launcherReady
+        let keepWindow = keepSession && snapshot.launcherWindowVisible
+        let keepGame = keepSession && snapshot.gameRunning
         snapshot = LibrarySnapshot.display(
             library.runtime(for: recipe).fileSnapshot(
                 wineSessionLive: keepLive,
@@ -275,7 +292,9 @@ final class LibraryModel: ObservableObject {
         noteGameInteraction(selectedID)
         error = nil
         detailStatusReady = false
-        applySelectedFileStatus()
+        launcherUpConfirmations = 0
+        launcherSessionKnown = false
+        applySelectedFileStatus(keepSession: false)
         refresh()
         refreshInstalled()
     }
@@ -340,13 +359,16 @@ final class LibraryModel: ObservableObject {
                 self.snapshot = LibrarySnapshot.display(session.0, activity: self.activity, busy: self.busy)
                 // Window visibility flickers when you switch apps or a game covers Steam.
                 // Once Steam was confirmed up, keep it up while the client process stays ready.
+                let firstLook = !self.launcherSessionKnown
+                self.launcherSessionKnown = true
                 if !session.0.launcherReady {
                     self.launcherUpConfirmations = 0
                 } else if session.0.launcherWindowVisible {
-                    self.launcherUpConfirmations = min(
-                        self.launcherUpConfirmations + 1,
-                        self.launcherUpConfirmNeeded
-                    )
+                    // An already-open window is enough. Later polls still count up while it starts.
+                    self.launcherUpConfirmations =
+                        firstLook
+                        ? self.launcherUpConfirmNeeded
+                        : min(self.launcherUpConfirmations + 1, self.launcherUpConfirmNeeded)
                 }
                 if self.gameWasRunning, !session.0.isRunning {
                     SystemChrome.showMenuBarAndDock()
@@ -392,8 +414,7 @@ final class LibraryModel: ObservableObject {
             return
         }
         if selected == nil, [.install, .uninstall, .play].contains(action) { return }
-        // Cancel install / close the launcher: kill the session of that launcher.
-        // Stop while a game is running: kill only the game (the launcher stays open).
+        // Close the launcher. Stop while a game is running kills only the game.
         if action == .stop, !snapshot.isRunning {
             stopLauncherSession()
             return
@@ -623,7 +644,7 @@ struct LibraryView: View {
     @ObservedObject var model: LibraryModel
 
     var body: some View {
-        VStack(spacing: 0) {
+        GeometryReader { geo in
             NavigationSplitView {
                 List(selection: $model.selectedID) {
                     ForEach(model.recipes) { recipe in
@@ -656,25 +677,18 @@ struct LibraryView: View {
                             launcherPicker(for: recipe)
                         }
                         if model.detailStatusReady {
-                            actionSteps(includeGame: true, title: recipe.title)
+                            actionSteps(title: recipe.title)
                         } else {
                             detailStatusLoading
                         }
                     } else {
-                        Image(nsImage: AppIcon.image)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 72, height: 72)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if model.detailStatusReady {
-                            actionSteps(includeGame: false, title: nil)
-                        } else {
-                            detailStatusLoading
-                        }
+                        landingPage
                     }
-                    Text("This app does not include a game license. Use a \(model.launcherName) account that owns the game.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if model.selected != nil {
+                        Text("This app does not include a game license. Use a \(model.launcherName) account that owns the game.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     if model.selected?.launcherKind == .battleNet {
                         Text(
                             "Bought the game on Steam? Link your Steam account to your Battle.net account to see it in Battle.net: sign in at [account.battle.net](https://account.battle.net), then open Account Settings > Connections > Steam."
@@ -688,17 +702,21 @@ struct LibraryView: View {
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Button {
-                        model.showStoragePicker = true
-                    } label: {
-                        Label("Storage: \(model.storageName)", systemImage: "externaldrive")
+                    if model.selected == nil {
+                        storageLocation
+                    } else {
+                        Button {
+                            model.showStoragePicker = true
+                        } label: {
+                            Label("Storage: \(model.storageName)", systemImage: "externaldrive")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(model.busy || model.homebrewBusy)
+                        .accessibilityIdentifier("storage-move")
                     }
-                    .buttonStyle(.borderless)
-                    .disabled(model.busy || model.homebrewBusy)
-                    .accessibilityIdentifier("storage-move")
-                    Spacer()
                 }
                 .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .navigationTitle("Silicon Cellar")
             .toolbar {
@@ -713,9 +731,12 @@ struct LibraryView: View {
                     }
                 }
             }
-            if model.showsStatusBar {
-                StatusBar(lines: model.statusLines, busy: model.sessionBusy)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if model.showsStatusBar {
+                    StatusBar(lines: model.statusLines, busy: model.sessionBusy)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
         .sheet(item: $model.popup) { popup in
             if let licenseFile = popup.appleLicenseFile {
@@ -751,6 +772,51 @@ struct LibraryView: View {
         }
     }
 
+    /// No game is selected. Install, sign-in, and play stay on the game page.
+    private var landingPage: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(nsImage: AppIcon.image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 72, height: 72)
+            Text("Select a game")
+                .font(.largeTitle.bold())
+            Text("Silicon Cellar runs Windows games on Apple Silicon. The games come from these launchers:")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Launcher.allCases, id: \.self) { launcher in
+                    Text(launcher.displayName)
+                }
+            }
+            Text("Select a game in the list. Then install its launcher, sign in, and install the game.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("This app does not include a game license. Sign in with the account that owns the game.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Landing page only. Says where the games are kept, and opens the storage picker.
+    private var storageLocation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Where games are stored")
+                .font(.headline)
+            Text("Games, settings, and local saves are on \(model.storageName).")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Change storage location") {
+                model.showStoragePicker = true
+            }
+            .disabled(model.busy || model.homebrewBusy)
+            .accessibilityIdentifier("storage-move")
+        }
+    }
+
     private var detailStatusLoading: some View {
         HStack(spacing: 10) {
             ProgressView()
@@ -775,7 +841,7 @@ struct LibraryView: View {
     }
 
     @ViewBuilder
-    private func actionSteps(includeGame: Bool, title: String?) -> some View {
+    private func actionSteps(title: String) -> some View {
         let launcherName = model.launcherName
         let showsLauncherUninstall = model.selected?.launcherKind == .rsi
         let launcherMissing =
@@ -789,12 +855,11 @@ struct LibraryView: View {
             .font(.title3)
             .foregroundStyle(.secondary)
         if launcherMissing {
-            Text(
-                title.map {
-                    "Install the \(launcherName) client for \($0)."
-                } ?? "Install the Steam client. Select a game after you sign in."
-            )
-            .foregroundStyle(.secondary)
+            Text("Install the \(launcherName) client for \(title).")
+                .foregroundStyle(.secondary)
+        } else if !model.launcherSessionKnown {
+            Text("Checking whether \(launcherName) is open.")
+                .foregroundStyle(.secondary)
         } else if !model.launcherIsUpStable {
             Text(
                 model.snapshot.wineSessionLive
@@ -803,14 +868,7 @@ struct LibraryView: View {
             )
             .foregroundStyle(.secondary)
         } else if !model.snapshot.isSignedIn {
-            Text(
-                title.map {
-                    "Sign in with an account that owns \($0)."
-                } ?? "Sign in in the Steam window."
-            )
-            .foregroundStyle(.secondary)
-        } else if !includeGame {
-            Text("Steam sign-in is complete. Select a game in the list.")
+            Text("Sign in with an account that owns \(title).")
                 .foregroundStyle(.secondary)
         }
 
@@ -866,7 +924,16 @@ struct LibraryView: View {
                     model.run(.uninstallLauncher)
                 }
             }
-            if launcherUp {
+            if !launcherMissing, !model.launcherSessionKnown {
+                splitStep(
+                    2,
+                    status: "Checking \(launcherName)…",
+                    done: false,
+                    actionTitle: "Start \(launcherName)",
+                    actionColor: StepColor.setup,
+                    enabled: false
+                ) {}
+            } else if launcherUp {
                 splitStep(
                     2,
                     status: "\(launcherName) is running",
@@ -924,6 +991,15 @@ struct LibraryView: View {
                     model.run(.setup)
                 }
             }
+        } else if !model.launcherSessionKnown {
+            splitStep(
+                1,
+                status: "Checking \(launcherName)…",
+                done: false,
+                actionTitle: "Start \(launcherName)",
+                actionColor: StepColor.setup,
+                enabled: false
+            ) {}
         } else if launcherUp {
             splitStep(
                 1,
@@ -983,109 +1059,141 @@ struct LibraryView: View {
             }
         }
 
-        if includeGame {
-            if model.installInProgress || model.snapshot.stage == .downloading {
-                // Stop ends the launcher session and cancels the install — not a running game.
+        if model.installInProgress || model.snapshot.stage == .downloading {
+            // Stop ends the launcher session and cancels the install — not a running game.
+            splitStep(
+                gameNumber,
+                status: model.selected?.launcherKind == .rsi
+                    ? "Click Install in the RSI Launcher"
+                    : "Installing…",
+                done: false,
+                actionTitle: "Cancel install",
+                actionColor: StepColor.danger,
+                enabled: true
+            ) {
+                model.cancelGameInstall()
+            }
+            splitStep(
+                playNumber,
+                status: "Not ready to play",
+                done: false,
+                actionTitle: "Play",
+                actionColor: StepColor.play,
+                enabled: false
+            ) {}
+        } else if model.uninstallInProgress {
+            splitStep(
+                gameNumber,
+                status: "Uninstalling…",
+                done: false,
+                actionTitle: "Uninstall",
+                actionColor: StepColor.danger,
+                enabled: false
+            ) {}
+            splitStep(
+                playNumber,
+                status: "Not ready to play",
+                done: false,
+                actionTitle: "Play",
+                actionColor: StepColor.play,
+                enabled: false
+            ) {}
+        } else if model.snapshot.isInstalled {
+            splitStep(
+                gameNumber,
+                status: "Game is installed",
+                done: true,
+                actionTitle: "Uninstall",
+                actionColor: StepColor.danger,
+                enabled: launcherUp && signedIn
+            ) {
+                model.run(.uninstall)
+            }
+            if model.snapshot.isRunning {
                 splitStep(
-                    gameNumber,
-                    status: "Installing…",
-                    done: false,
-                    actionTitle: "Cancel install",
+                    playNumber,
+                    status: "Game is running",
+                    done: true,
+                    actionTitle: "Stop",
                     actionColor: StepColor.danger,
                     enabled: true
                 ) {
                     model.run(.stop)
                 }
-                splitStep(
-                    playNumber,
-                    status: "Not ready to play",
-                    done: false,
-                    actionTitle: "Play",
-                    actionColor: StepColor.play,
-                    enabled: false
-                ) {}
-            } else if model.uninstallInProgress {
-                splitStep(
-                    gameNumber,
-                    status: "Uninstalling…",
-                    done: false,
-                    actionTitle: "Uninstall",
-                    actionColor: StepColor.danger,
-                    enabled: false
-                ) {}
-                splitStep(
-                    playNumber,
-                    status: "Not ready to play",
-                    done: false,
-                    actionTitle: "Play",
-                    actionColor: StepColor.play,
-                    enabled: false
-                ) {}
-            } else if model.snapshot.isInstalled {
-                splitStep(
-                    gameNumber,
-                    status: "Game is installed",
-                    done: true,
-                    actionTitle: "Uninstall",
-                    actionColor: StepColor.danger,
-                    enabled: launcherUp && signedIn
-                ) {
-                    model.run(.uninstall)
-                }
-                if model.snapshot.isRunning {
-                    splitStep(
-                        playNumber,
-                        status: "Game is running",
-                        done: true,
-                        actionTitle: "Stop",
-                        actionColor: StepColor.danger,
-                        enabled: true
-                    ) {
-                        model.run(.stop)
-                    }
-                } else {
-                    splitStep(
-                        playNumber,
-                        status: launcherUp ? "Ready to play" : "Start \(launcherName) to play",
-                        done: false,
-                        actionTitle: "Play",
-                        actionColor: StepColor.play,
-                        enabled: launcherUp
-                    ) {
-                        model.run(.play)
-                    }
-                }
             } else {
-                let installReady = launcherUp && signedIn
-                let installHint =
-                    installReady
-                    ? "Game is not installed"
-                    : launcherStarting && !launcherUp
-                        ? "Wait until the \(launcherName) window opens"
-                        : launcherUp
-                            ? "Sign in before you install"
-                            : "Start \(launcherName) before you install"
-                splitStep(
-                    gameNumber,
-                    status: installHint,
-                    done: false,
-                    actionTitle: "Install game",
-                    actionColor: StepColor.install,
-                    enabled: installReady
-                ) {
-                    model.run(.install)
-                }
-                // Stop Steam stays on step 1. Step 4 is play readiness only.
                 splitStep(
                     playNumber,
-                    status: "Not ready to play",
+                    status: launcherUp ? "Ready to play" : "Start \(launcherName) to play",
                     done: false,
                     actionTitle: "Play",
                     actionColor: StepColor.play,
-                    enabled: false
-                ) {}
+                    enabled: launcherUp
+                ) {
+                    model.run(.play)
+                }
             }
+        } else if model.selected?.launcherKind == .rsi {
+            rsiManualInstallNotice(gameNumber)
+            splitStep(
+                playNumber,
+                status: "Not ready to play",
+                done: false,
+                actionTitle: "Play",
+                actionColor: StepColor.play,
+                enabled: false
+            ) {}
+        } else {
+            let installReady = launcherUp && signedIn
+            let installHint =
+                installReady
+                ? "Game is not installed"
+                : launcherStarting && !launcherUp
+                    ? "Wait until the \(launcherName) window opens"
+                    : launcherUp
+                        ? "Sign in before you install"
+                        : "Start \(launcherName) before you install"
+            splitStep(
+                gameNumber,
+                status: installHint,
+                done: false,
+                actionTitle: "Install game",
+                actionColor: StepColor.install,
+                enabled: installReady
+            ) {
+                model.run(.install)
+            }
+            // Stop Steam stays on step 1. Step 4 is play readiness only.
+            splitStep(
+                playNumber,
+                status: "Not ready to play",
+                done: false,
+                actionTitle: "Play",
+                actionColor: StepColor.play,
+                enabled: false
+            ) {}
         }
+    }
+
+    /// The RSI Launcher install cannot be started from this app. The step is the instruction only.
+    private func rsiManualInstallNotice(_ number: Int) -> some View {
+        let text = RSIInstaller.manualInstallInstructions(
+            gameTitle: model.selected?.title ?? "the game",
+            installFolder: model.selected?.installFolder ?? "StarCitizen",
+            channel: model.selected?.rsiChannel
+        )
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "square")
+                .font(.title)
+            Text("\(number). \(text)")
+                .font(Self.stepFont)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StepColor.pending, in: Capsule())
     }
 
     private func detailHeader(title: String, subtitle: String?) -> some View {
@@ -1118,6 +1226,11 @@ struct LibraryView: View {
     /// Keeps every action label the same width and the same font size.
     private static let widestActionTitle = "Stop RSI Launcher Installer"
 
+    /// These buttons stop work that is already running. They stay clickable while the app is busy.
+    private static func actionStaysAvailableWhileBusy(_ actionTitle: String) -> Bool {
+        actionTitle.hasPrefix("Stop") || actionTitle.hasPrefix("Sign out") || actionTitle == "Cancel install"
+    }
+
     private func splitStep(
         _ number: Int,
         status: String,
@@ -1127,8 +1240,8 @@ struct LibraryView: View {
         enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        let storageBlocks = model.storageIssue != nil && !actionTitle.hasPrefix("Stop")
-        let active = enabled && !storageBlocks && (!model.busy || actionTitle.hasPrefix("Stop") || actionTitle.hasPrefix("Sign out"))
+        let storageBlocks = model.storageIssue != nil && !actionTitle.hasPrefix("Stop") && actionTitle != "Cancel install"
+        let active = enabled && !storageBlocks && (!model.busy || Self.actionStaysAvailableWhileBusy(actionTitle))
         let statusColor = done ? StepColor.ready : StepColor.pending
         return HStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -1181,6 +1294,9 @@ struct LibraryView: View {
             return "Downloading \(model.selected?.title ?? "the game")… \(Int((fraction * 100).rounded()))%"
         }
         if !model.launchProgress.detail.isEmpty { return model.launchProgress.detail }
+        if model.installInProgress, model.selected?.launcherKind == .rsi {
+            return "Click Install in the RSI Launcher window."
+        }
         if model.installInProgress { return "Download is starting." }
         return "\(model.launcherName) is starting."
     }
