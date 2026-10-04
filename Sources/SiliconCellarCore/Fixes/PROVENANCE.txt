@@ -4,5 +4,6 @@ Red Alert 2 installs it as ddraw.dll. Heroes III installs it as xdd.dll.
 Company of Heroes 3: Microsoft VC++ 2019 x64 redistributable, SHA-256 pinned in GameFixes.
 Zero Hour online installer: https://cdn.playgenerals.online/GeneralsOnline_setup_092226_QFE2.exe
 MFC42/mfc42.tar.xz: Microsoft Visual C++ 6 SP4 mfc42.dll. Unpacked on Play. See MFC42/NOTICE.txt. Not MIT.
+Brink/brinkglsl.tar.xz: brinkglsl.dll built from scripts/brink-glsl.c in this repository (build command in that file). Unpacked on Play.
 AoE3 and Elden Ring XML files are generic settings templates.
 Red Dead Redemption 2 system.xml is a graphics-only settings template. The Rockstar Games Launcher is downloaded from gamedownloads.rockstargames.com and checked with SHA-256 321886457b7e4ab727a27671c17a815684a3943579eedf7e2248a3b9f0973746.

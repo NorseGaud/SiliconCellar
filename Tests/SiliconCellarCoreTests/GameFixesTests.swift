@@ -12,6 +12,54 @@ final class GameFixesTests: XCTestCase {
         XCTAssertEqual(found[0].count, 40)
     }
 
+    func testBrinkOpenGLAdjustmentLowersTheVersionCheck() throws {
+        let replacements = GameFixes.brinkReplacements
+        for replacement in replacements {
+            XCTAssertTrue(replacement.originals.allSatisfy { $0.count == replacement.adjusted.count })
+        }
+        let end = try XCTUnwrap(replacements.map { $0.offset + $0.adjusted.count }.max())
+        var bytes = [UInt8](repeating: 0, count: end)
+        for replacement in replacements {
+            plant(replacement.originals[0], at: replacement.offset, in: &bytes)
+        }
+        let result = [UInt8](try XCTUnwrap(GameFixes.brinkOpenGLAdjusted(Data(bytes))))
+        for replacement in replacements {
+            XCTAssertEqual(Array(result[replacement.offset..<(replacement.offset + replacement.adjusted.count)]), replacement.adjusted)
+        }
+        XCTAssertNil(GameFixes.brinkOpenGLAdjusted(Data(result)))
+
+        let format = GameFixes.brinkFormatCheckOffset
+        for earlier in [GameFixes.brinkFormatCheckOriginal, GameFixes.brinkFormatCheckSkipped] {
+            var partial = result
+            plant(earlier, at: format, in: &partial)
+            let finished = [UInt8](try XCTUnwrap(GameFixes.brinkOpenGLAdjusted(Data(partial))))
+            XCTAssertEqual(finished, result)
+        }
+        var withoutShaderLibrary = result
+        plant(GameFixes.brinkShaderSourceCallOriginal, at: GameFixes.brinkShaderSourceCallOffset, in: &withoutShaderLibrary)
+        plant(GameFixes.brinkShaderLoaderOriginal, at: GameFixes.brinkShaderLoaderOffset, in: &withoutShaderLibrary)
+        plant(GameFixes.brinkShaderLibraryNameOriginal, at: GameFixes.brinkShaderLibraryNameOffset, in: &withoutShaderLibrary)
+        XCTAssertEqual([UInt8](try XCTUnwrap(GameFixes.brinkOpenGLAdjusted(Data(withoutShaderLibrary)))), result)
+    }
+
+    private func plant(_ bytes: [UInt8], at offset: Int, in buffer: inout [UInt8]) {
+        buffer.replaceSubrange(offset..<(offset + bytes.count), with: bytes)
+    }
+
+    func testBrinkOpenGLPatchRejectsUnknownFile() {
+        XCTAssertThrowsError(try GameFixes.patchedBrinkOpenGL(Data(repeating: 1, count: 64)))
+    }
+
+    func testBrinkLeavesUnknownExecutable() throws {
+        let runtime = try makeRuntime(id: "brink", folder: "BRINK", executable: "brink.exe")
+        let exe = try XCTUnwrap(runtime.game)
+        try FileManager.default.createDirectory(at: exe.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let original = Data("different-brink".utf8)
+        try original.write(to: exe)
+        try runtime.applyGameFixes()
+        XCTAssertEqual(try Data(contentsOf: exe), original)
+    }
+
     func testHeroesAudioPatchRejectsUnknownFile() {
         XCTAssertEqual(GameFixes.heroesAudioCode.count, 56)
         XCTAssertThrowsError(try GameFixes.patchedHeroesAudio(Data(repeating: 1, count: 64)))
@@ -36,6 +84,12 @@ final class GameFixesTests: XCTestCase {
             archiveSHA: GameFixes.mfc42ArchiveSHA,
             member: "mfc42.dll",
             fileSHA: GameFixes.mfc42DLLSHA
+        )
+        try assertArchive(
+            root.appendingPathComponent(GameFixes.brinkShaderLibraryArchive),
+            archiveSHA: GameFixes.brinkShaderLibraryArchiveSHA,
+            member: "brinkglsl.dll",
+            fileSHA: GameFixes.brinkShaderLibrarySHA
         )
     }
 

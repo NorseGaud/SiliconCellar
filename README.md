@@ -53,7 +53,7 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 - [ ] [Age of Empires IV](Recipes/aoe4.json)
 - [ ] [Age of Mythology: Retold](Recipes/aom-retold.json)
 - [x] [Assassin's Creed](Recipes/assassins-creed.json)
-- [ ] [BRINK](Recipes/brink.json)
+- [x] [BRINK](Recipes/brink.json)
 - [ ] [Command & Conquer: Generals Zero Hour](Recipes/zero-hour.json)
 - [ ] [Command & Conquer: Red Alert 2](Recipes/red-alert2.json)
 - [ ] [Company of Heroes 3](Recipes/coh3.json)

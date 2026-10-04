@@ -822,6 +822,14 @@ public final class Runtime: @unchecked Sendable {
     }
 
     private func expandedSeedText(_ text: String) -> String {
+        var text = text
+        if text.contains("{screenWidth}") || text.contains("{screenHeight}") {
+            let frame = display.mainDisplayFrameSize() ?? (width: 1920, height: 1080)
+            text =
+                text
+                .replacingOccurrences(of: "{screenWidth}", with: "\(frame.width)")
+                .replacingOccurrences(of: "{screenHeight}", with: "\(frame.height)")
+        }
         guard text.contains("{displayWidth}") || text.contains("{displayHeight}") else { return text }
         let size = seedDisplaySize()
         return

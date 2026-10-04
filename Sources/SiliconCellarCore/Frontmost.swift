@@ -14,17 +14,30 @@ public protocol FrontmostActivating: Sendable {
 
 /// Main display size in points (Wine mac driver units without RetinaMode).
 public protocol DisplaySizing: Sendable {
+    /// Even width and height. A virtual desktop uses this size.
     func mainDisplaySize() -> (width: Int, height: Int)?
+    /// Full frame. A fullscreen window must match this size to cover the Mac menu bar.
+    func mainDisplayFrameSize() -> (width: Int, height: Int)?
 }
 
 public struct MainScreenDisplay: DisplaySizing {
     public init() {}
 
-    public func mainDisplaySize() -> (width: Int, height: Int)? {
+    public func mainDisplayFrameSize() -> (width: Int, height: Int)? {
         guard let screen = NSScreen.main else { return nil }
-        let width = max(640, Int(screen.frame.width.rounded()))
-        let height = max(480, Int(screen.frame.height.rounded()))
-        return (width - (width % 2), height - (height % 2))
+        return (
+            Self.pointCount(screen.frame.width, minimum: 640),
+            Self.pointCount(screen.frame.height, minimum: 480)
+        )
+    }
+
+    public func mainDisplaySize() -> (width: Int, height: Int)? {
+        guard let frame = mainDisplayFrameSize() else { return nil }
+        return (frame.width - (frame.width % 2), frame.height - (frame.height % 2))
+    }
+
+    private static func pointCount(_ value: CGFloat, minimum: Int) -> Int {
+        max(minimum, Int(value.rounded()))
     }
 }
 

@@ -235,6 +235,7 @@ final class RecipeStoreTests: XCTestCase {
         XCTAssertEqual(recipes.first { $0.id == "brink" }?.steamID, "22350")
         XCTAssertEqual(recipes.first { $0.id == "brink" }?.executable, "brink.exe")
         XCTAssertEqual(recipes.first { $0.id == "brink" }?.installFolder, "BRINK")
+        XCTAssertTrue(recipes.first { $0.id == "brink" }?.filesToSeed["base/autoexec.cfg"]?.contains("{screenHeight}") == true)
         let starCitizen = try XCTUnwrap(recipes.first { $0.id == "star-citizen" })
         XCTAssertEqual(starCitizen.launcherKind, .rsi)
         XCTAssertEqual(starCitizen.supportedLaunchers, [.rsi])

@@ -980,6 +980,28 @@ final class RuntimeTests: XCTestCase {
         XCTAssertFalse(arguments.contains("-applaunch"))
     }
 
+    func testSeedScreenTokensUseTheFullDisplayFrame() throws {
+        var recipe = Recipe(
+            id: "brink",
+            title: "BRINK",
+            steamID: "22350",
+            installFolder: "BRINK",
+            executable: "brink.exe"
+        )
+        recipe.seedFiles = [
+            "base/autoexec.cfg": "seta r_customWidth \"{screenWidth}\"\nseta r_customHeight \"{screenHeight}\"\nseta r_mode \"{displayHeight}\"\n"
+        ]
+        let env = try makeEnvironment(recipe: recipe, displayWidth: 1920, displayHeight: 1242, displayFrameHeight: 1243)
+        defer { try? FileManager.default.removeItem(at: env.root) }
+        try FileManager.default.createDirectory(at: env.runtime.gameFolder, withIntermediateDirectories: true)
+        try env.runtime.seedGameFiles()
+        let text = try String(contentsOf: env.runtime.gameFolder.appendingPathComponent("base/autoexec.cfg"), encoding: .utf8)
+        XCTAssertEqual(
+            text,
+            "seta r_customWidth \"1920\"\nseta r_customHeight \"1243\"\nseta r_mode \"1242\"\n"
+        )
+    }
+
     func testPlayDirectLaunchUsesExactDisplayDesktopSize() throws {
         let recipe = Recipe(
             id: "mdk",
@@ -1465,7 +1487,9 @@ final class RuntimeTests: XCTestCase {
     struct FixedDisplay: DisplaySizing {
         var width: Int
         var height: Int
+        var frameHeight: Int?
         func mainDisplaySize() -> (width: Int, height: Int)? { (width, height) }
+        func mainDisplayFrameSize() -> (width: Int, height: Int)? { (width, frameHeight ?? height) }
     }
 
     struct Environment {
@@ -1502,7 +1526,8 @@ final class RuntimeTests: XCTestCase {
             executable: "Spacewar.exe"
         ),
         displayWidth: Int = 2560,
-        displayHeight: Int = 1440
+        displayHeight: Int = 1440,
+        displayFrameHeight: Int? = nil
     ) throws -> Environment {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cellar-run-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1525,7 +1550,7 @@ final class RuntimeTests: XCTestCase {
             sink: sink,
             frontmost: frontmost,
             steamClient: steamClient,
-            display: FixedDisplay(width: displayWidth, height: displayHeight)
+            display: FixedDisplay(width: displayWidth, height: displayHeight, frameHeight: displayFrameHeight)
         )
         runtime.expectedSteamSetupSHA256 = SteamInstaller.digest(of: commands.steamSetupBytes)
         runtime.steamClientWait = 0

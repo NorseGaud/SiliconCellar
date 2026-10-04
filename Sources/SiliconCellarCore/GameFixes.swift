@@ -8,6 +8,106 @@ enum GameFixes {
     static let coh3PackageURL =
         "https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/52B196BBE9016488C735E7B41805B651261FFA5D7AA86EB6A1D0095BE83687B2/VC_redist.x64.exe"
     static let aoe3ExecutableSHA = "a3fcaa23f57ffcfe5fb799e2b19f89560793784c73aded74747d955c95a4c625"
+    /// Steam `brink.exe` before the OpenGL adjustment.
+    static let brinkExecutableSHA = "0145ce773aeaf63563350930d9b93424c151128567b5dd9af5d6ed5ff26aa53f"
+    /// Version test and `GL_EXT_texture3D` name only. Play still applies the texture-format check.
+    static let brinkOpenGLPartialSHA = "591fd3c35d21c802cfac0288ee612f15d70ff38dfd0d696397901027cda15ae9"
+    /// Version test, `GL_EXT_texture3D` name, and the format check skipped with an unconditional jump.
+    static let brinkOpenGLSkippedSHA = "2a10e6f14fc1dc92a93507a96f276c86eaf7f46ebc53561829ff3147559e922f"
+    /// Version test, `GL_EXT_texture3D` name, and the texture record set to the driver format.
+    static let brinkOpenGLFormatSHA = "cb36917c9e174ddc1af9212c66e55bec114dc380ee2e4e765842786fded227be"
+    /// Format record, plus `glColorMask` in place of the missing `glColorMaski`.
+    static let brinkOpenGLColorMaskSHA = "5aed449d904fbbc3da66e6abca8050137d61da669dcf4f84ff3032d135254a32"
+    /// Color mask, plus `brinkglsl.dll` in front of `glShaderSourceARB`.
+    static let brinkOpenGLSHA = "eff78630d9b0e63474347787b55b68bd798bf04b23463b0ccdb6550823243577"
+    /// The Steam file and each earlier Play adjustment. Play finishes any of them.
+    static let brinkOpenGLInputSHAs: Set<String> = [
+        brinkExecutableSHA, brinkOpenGLPartialSHA, brinkOpenGLSkippedSHA, brinkOpenGLFormatSHA, brinkOpenGLColorMaskSHA,
+    ]
+    /// `atof` of the legacy context version (`2.1 Metal - 90.5`) is compared with this float.
+    static let brinkVersionCheckOffset = 0x414788
+    static let brinkVersionCheckOriginal: [UInt8] = [0x66, 0x66, 0x46, 0x40]
+    static let brinkVersionCheckAdjusted: [UInt8] = [0x00, 0x00, 0x00, 0x40]
+    /// `cmp byte ptr [flag], 0` for the `GL_EXT_texture3D` requirement. The immediate is the last `0x00`.
+    static let brinkTexture3DCheckOffset = 0x6EC7C
+    static let brinkTexture3DCheckOriginal: [UInt8] = [0x80, 0x3D, 0xD1, 0x84, 0x92, 0x00, 0x00, 0x75]
+    static let brinkTexture3DCheckAdjusted: [UInt8] = [0x80, 0x3D, 0xD1, 0x84, 0x92, 0x00, 0xFF, 0x75]
+    /// `cmp esi, eax; je` after `glGetTexLevelParameter`. The Mac driver returns a sized format.
+    static let brinkFormatCheckOffset = 0x6B4AF
+    static let brinkFormatCheckOriginal: [UInt8] = [
+        0x8B, 0x44, 0x24, 0x28, 0x3B, 0xF0, 0x74, 0x12, 0x50, 0x56, 0x68, 0xDC, 0x46, 0x81,
+    ]
+    static let brinkFormatCheckSkipped: [UInt8] = [
+        0x8B, 0x44, 0x24, 0x28, 0x3B, 0xF0, 0xEB, 0x12, 0x50, 0x56, 0x68, 0xDC, 0x46, 0x81,
+    ]
+    /// `mov eax, [esp+0x28]; mov [edi+0x78], eax; mov esi, eax; jmp` to the success path.
+    static let brinkFormatCheckAdjusted: [UInt8] = [
+        0x8B, 0x44, 0x24, 0x28, 0x89, 0x87, 0x78, 0x00, 0x00, 0x00, 0x8B, 0xF0, 0xEB, 0x0C,
+    ]
+    /// `call dword ptr [glColorMaski]`. The legacy context does not provide that entry point.
+    static let brinkColorMaskCallOffset = 0x67EBC
+    static let brinkColorMaskCallOriginal: [UInt8] = [0xFF, 0x15, 0x04, 0x0F, 0xC0, 0x00]
+    /// `call` the stub below, then `nop`.
+    static let brinkColorMaskCallAdjusted: [UInt8] = [0xE8, 0xA0, 0xA4, 0xFD, 0xFF, 0x90]
+    static let brinkColorMaskStubOffset = 0x42361
+    static let brinkColorMaskStubOriginal: [UInt8] = [UInt8](repeating: 0xCC, count: 33)
+    /// For buffer 0, call `glColorMask`. Leave other buffers unchanged. `ret 0x14` pops the five arguments.
+    static let brinkColorMaskStubAdjusted: [UInt8] = [
+        0x8B, 0x44, 0x24, 0x04, 0x85, 0xC0, 0x75, 0x16,
+        0xFF, 0x74, 0x24, 0x14, 0xFF, 0x74, 0x24, 0x14, 0xFF, 0x74, 0x24, 0x14, 0xFF, 0x74, 0x24, 0x14,
+        0xFF, 0x15, 0x38, 0xA5, 0x7F, 0x00, 0xC2, 0x14, 0x00,
+    ]
+    /// `call dword ptr [glShaderSourceARB]` in the render-program compile.
+    static let brinkShaderSourceCallOffset = 0x1275DD
+    static let brinkShaderSourceCallOriginal: [UInt8] = [0xFF, 0x15, 0xFC, 0x0E, 0xC0, 0x00]
+    /// `call` the loader below, then `nop`.
+    static let brinkShaderSourceCallAdjusted: [UInt8] = [0xE8, 0xB3, 0x9D, 0x09, 0x00, 0x90]
+    static let brinkShaderLoaderOffset = 0x1C1395
+    static let brinkShaderLoaderOriginal: [UInt8] = [UInt8](repeating: 0xCC, count: 36)
+    /// `LoadLibraryA("brinkglsl")` and `GetProcAddress(module, 1)`, then `jmp` to that export.
+    /// Without the DLL, `jmp` to `glShaderSourceARB`. The caller's arguments stay on the stack.
+    static let brinkShaderLoaderAdjusted: [UInt8] = [
+        0x68, 0x84, 0x2F, 0x44, 0x00, 0xFF, 0x15, 0x54, 0xA1, 0x7F, 0x00, 0x85, 0xC0, 0x74, 0x0F,
+        0x6A, 0x01, 0x50, 0xFF, 0x15, 0x2C, 0xA2, 0x7F, 0x00, 0x85, 0xC0, 0x74, 0x02, 0xFF, 0xE0,
+        0xFF, 0x25, 0xFC, 0x0E, 0xC0, 0x00,
+    ]
+    /// Unused bytes after the color-mask stub hold the DLL name.
+    static let brinkShaderLibraryNameOffset = 0x42384
+    static let brinkShaderLibraryNameOriginal: [UInt8] = [UInt8](repeating: 0xCC, count: 10)
+    static let brinkShaderLibraryNameAdjusted: [UInt8] = Array("brinkglsl".utf8) + [0]
+    /// Built from `scripts/brink-glsl.c`. Rewrites BRINK's GLSL 1.30 shaders to GLSL 1.20 for the Mac driver.
+    static let brinkShaderLibraryArchive = "Brink/brinkglsl.tar.xz"
+    static let brinkShaderLibraryArchiveSHA = "acada49b9acd7302a612bebe4b2aa6170de2dcc4a0579927990b9f155a78f676"
+    static let brinkShaderLibrarySHA = "4af186010654efda3f98dd33c502a7b79414aecd161810acbfd0510d5bfea9b1"
+
+    struct BrinkReplacement {
+        let offset: Int
+        let originals: [[UInt8]]
+        let adjusted: [UInt8]
+    }
+
+    static let brinkReplacements: [BrinkReplacement] = [
+        BrinkReplacement(offset: brinkVersionCheckOffset, originals: [brinkVersionCheckOriginal], adjusted: brinkVersionCheckAdjusted),
+        BrinkReplacement(offset: brinkTexture3DCheckOffset, originals: [brinkTexture3DCheckOriginal], adjusted: brinkTexture3DCheckAdjusted),
+        BrinkReplacement(
+            offset: brinkFormatCheckOffset,
+            originals: [brinkFormatCheckOriginal, brinkFormatCheckSkipped],
+            adjusted: brinkFormatCheckAdjusted
+        ),
+        BrinkReplacement(offset: brinkColorMaskStubOffset, originals: [brinkColorMaskStubOriginal], adjusted: brinkColorMaskStubAdjusted),
+        BrinkReplacement(offset: brinkColorMaskCallOffset, originals: [brinkColorMaskCallOriginal], adjusted: brinkColorMaskCallAdjusted),
+        BrinkReplacement(
+            offset: brinkShaderLibraryNameOffset,
+            originals: [brinkShaderLibraryNameOriginal],
+            adjusted: brinkShaderLibraryNameAdjusted
+        ),
+        BrinkReplacement(offset: brinkShaderLoaderOffset, originals: [brinkShaderLoaderOriginal], adjusted: brinkShaderLoaderAdjusted),
+        BrinkReplacement(
+            offset: brinkShaderSourceCallOffset,
+            originals: [brinkShaderSourceCallOriginal],
+            adjusted: brinkShaderSourceCallAdjusted
+        ),
+    ]
     /// `Fixes/MFC42/mfc42.tar.xz` holds `mfc42.dll` from the Visual C++ 6 SP4 redistributable.
     static let mfc42ArchiveSHA = "35140a3cb9baf12546f86df9c96554d99864fe2dbe6ab46482497ba322999310"
     static let mfc42DLLSHA = "ec63a85030c60716acdcf060abfaa95a6a3528631622fa60e7d17fbea2f751f9"
@@ -85,6 +185,46 @@ enum GameFixes {
         return fixed
     }
 
+    /// The Mac legacy OpenGL context reports version 2.1 and stores some textures in a sized format.
+    /// BRINK stops on both. `glTexImage3D` is present, but the extension string omits `GL_EXT_texture3D`.
+    /// The format check copies the driver format into the texture record, then continues.
+    /// `glColorMaski` is missing, so buffer 0 uses `glColorMask`.
+    /// The shaders are GLSL 1.30, so `glShaderSourceARB` goes through `brinkglsl.dll`, which rewrites them to GLSL 1.20.
+    /// Each check is changed only when its original bytes are still present. Returns nil when nothing changes.
+    static func brinkOpenGLAdjusted(_ original: Data) -> Data? {
+        var bytes = [UInt8](original)
+        var changed = false
+        for replacement in brinkReplacements {
+            for original in replacement.originals
+            where replace(&bytes, at: replacement.offset, from: original, to: replacement.adjusted) {
+                changed = true
+                break
+            }
+        }
+        return changed ? Data(bytes) : nil
+    }
+
+    private static func replace(_ bytes: inout [UInt8], at offset: Int, from original: [UInt8], to adjusted: [UInt8]) -> Bool {
+        let end = offset + original.count
+        guard end <= bytes.count, Array(bytes[offset..<end]) == original else { return false }
+        bytes.replaceSubrange(offset..<end, with: adjusted)
+        return true
+    }
+
+    static func patchedBrinkOpenGL(_ original: Data) throws -> Data {
+        let digest = SteamInstaller.digest(of: original)
+        if digest == brinkOpenGLSHA { return original }
+        guard brinkOpenGLInputSHAs.contains(digest) else {
+            throw PortError("This BRINK executable does not match the tested file. It was left unchanged.")
+        }
+        guard let adjusted = brinkOpenGLAdjusted(original),
+            SteamInstaller.digest(of: adjusted) == brinkOpenGLSHA
+        else {
+            throw PortError("BRINK OpenGL adjustment failed verification. The executable was left unchanged.")
+        }
+        return adjusted
+    }
+
     static func eldenGraphics(template: Data, width: Int, height: Int) throws -> Data {
         guard (640...16_384).contains(width), (480...16_384).contains(height) else {
             throw PortError("Couldn't detect Elden Ring's display size.")
@@ -151,6 +291,7 @@ extension Runtime {
         case "heroes3": try applyHeroes3Fixes()
         case "zero-hour": try applyZeroHourOnline()
         case "rdr2": try applyRedDead()
+        case "brink": try applyBrinkOpenGL()
         default: break
         }
     }
@@ -416,6 +557,33 @@ extension Runtime {
             try files.write(original, to: backup)
         }
         try files.write(fixed, to: library)
+    }
+
+    private func applyBrinkOpenGL() throws {
+        guard let game, files.fileExists(game) else { return }
+        let original = try files.read(game)
+        let digest = SteamInstaller.digest(of: original)
+        guard digest == GameFixes.brinkOpenGLSHA || GameFixes.brinkOpenGLInputSHAs.contains(digest) else {
+            sink.say("This BRINK build keeps its original OpenGL check.")
+            return
+        }
+        try unpackBundledArchive(
+            GameFixes.brinkShaderLibraryArchive,
+            member: "brinkglsl.dll",
+            to: game.deletingLastPathComponent().appendingPathComponent("brinkglsl.dll"),
+            archiveSHA: GameFixes.brinkShaderLibraryArchiveSHA,
+            fileSHA: GameFixes.brinkShaderLibrarySHA
+        )
+        if digest == GameFixes.brinkOpenGLSHA { return }
+        let adjusted = try GameFixes.patchedBrinkOpenGL(original)
+        guard adjusted != original else { return }
+        let backup = root.appendingPathComponent("backups/brink/brink.exe")
+        if !files.fileExists(backup) {
+            try files.createDirectory(backup.deletingLastPathComponent())
+            try files.write(original, to: backup)
+        }
+        try files.write(adjusted, to: game)
+        sink.say("BRINK accepts the Mac OpenGL driver.")
     }
 
     private func applyRedDead() throws {

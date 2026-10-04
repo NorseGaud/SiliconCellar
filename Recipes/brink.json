@@ -11,5 +11,8 @@
   ],
   "environment": {},
   "dllOverrides": "dxgi,d3d11,d3d12=n,b",
+  "seedFiles": {
+    "base/autoexec.cfg": "seta r_fullscreen \"1\"\nseta r_mode \"-1\"\nseta r_customWidth \"{screenWidth}\"\nseta r_customHeight \"{screenHeight}\"\nseta r_aspectRatio \"-1\"\nseta r_customAspectRatioH \"{screenWidth}\"\nseta r_customAspectRatioV \"{screenHeight}\"\nseta r_screenFraction \"50\"\nseta r_useOcclusionQueries \"0\"\nseta r_useOcclusionQueriesLights \"0\"\n"
+  },
   "renderer": "wine"
 }
