@@ -75,11 +75,12 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 
 ## Build
 
-For day-to-day development (lint, test, `make dev`, Engine build), see [CONTRIBUTING.md](CONTRIBUTING.md).
+Clone, submodules, and the day-to-day commands are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
-cd ~/DEV/siliconcellar
-make
+git clone --recurse-submodules git@github.com:NorseGaud/SiliconCellar.git
+cd SiliconCellar
+make dev
 ```
 
 Bare `make` runs lint, tests, a debug build, a fresh Engine fetch from the pinned NorseGaud/wine release, then the signed and notarized release DMG. See [RELEASING.md](RELEASING.md) for credentials.

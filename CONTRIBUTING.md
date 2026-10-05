@@ -13,12 +13,30 @@ This guide is for local development on Silicon Cellar. For signed release DMGs, 
 
 You do **not** need Apple Game Porting Toolkit or a local Wine compile. The app uses a pinned [NorseGaud/wine](https://github.com/NorseGaud/wine/releases) Engine release (Wine 11.0 from the CrossOver 26.3 source with Silicon Cellar fixes).
 
-## Clone and enter the repo
+## Get the source
+
+Add an SSH key to your GitHub account. This repository and its submodules use SSH URLs.
 
 ```sh
-git clone git@github.com:NorseGaud/SiliconCellar.git
+git clone --recurse-submodules git@github.com:NorseGaud/SiliconCellar.git
 cd SiliconCellar
 ```
+
+If the clone is already on disk and a submodule folder is empty, check out the recorded commits:
+
+```sh
+git submodule update --init
+```
+
+Run that command again after `git pull`. It moves each submodule to the commit this repository records.
+
+| Path | Branch | When you use it |
+|------|--------|-----------------|
+| `wine/` | `siliconcellar` | Wine source. Read the Engine here. `make engine-source` compiles this tree (hours; see `wine/build/README.md`). To publish an Engine release, follow [When Wine changes](RELEASING.md#when-wine-changes). |
+| `homebrew-siliconcellar/` | `main` | Homebrew tap. `make release` writes `Casks/siliconcellar.rb` in this folder. |
+| `siliconcellar-renderers/` | `main` | Builds the DXVK, DXMT, and D3DMetal packages. Change a package here. Play downloads a release of the packages. |
+
+`make lint`, `make test`, `make build`, and `make dev` run in this repository. A playable app downloads the pinned Engine release. It does not compile `wine/`.
 
 ## Fast loop (code and tests)
 
