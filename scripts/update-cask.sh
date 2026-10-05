@@ -17,7 +17,7 @@ fail() {
 printf '%s\n' "$version" | grep -Eqx '[0-9]+(\.[0-9]+)+' || fail "version must look like 1.2.3, got: $version"
 printf '%s\n' "$build" | grep -Eqx '[0-9]+' || fail "build must be a number, got: $build"
 test -f "$dmg" || fail "missing DMG: $dmg"
-test -f "$cask_file" || fail "missing cask: $cask_file (clone git@github.com:${homebrew_tap_repo}.git there, or set HOMEBREW_TAP_DIR)"
+test -f "$cask_file" || fail "missing cask: $cask_file (run git submodule update --init homebrew-siliconcellar, or set HOMEBREW_TAP_DIR)"
 grep -Eq '^  version "' "$cask_file" || fail "no version line in $cask_file"
 grep -Eq '^  sha256 "' "$cask_file" || fail "no sha256 line in $cask_file"
 

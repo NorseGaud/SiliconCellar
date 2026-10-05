@@ -108,7 +108,7 @@ else
 	$(MAKE) notarize version="$(version)" build_number="$(build_number)"
 endif
 
-# Signed DMG → draft GitHub release → cask in ../homebrew-siliconcellar. Publish and commit by hand.
+# Signed DMG → draft GitHub release → cask in homebrew-siliconcellar/. Publish and commit by hand.
 release:
 ifdef CI
 	@echo 'CI: skipping release'

@@ -90,7 +90,7 @@ brew install --cask norsegaud/siliconcellar/siliconcellar
 One time:
 
 1. Sign in to `gh` with write access to `NorseGaud/SiliconCellar` (`gh auth login`)
-2. Clone the tap next to this repo: `git clone git@github.com:NorseGaud/homebrew-siliconcellar.git ../homebrew-siliconcellar` (or set `HOMEBREW_TAP_DIR` to another checkout)
+2. Get the tap submodule: `git submodule update --init homebrew-siliconcellar` (or set `HOMEBREW_TAP_DIR` to another checkout)
 
 ```sh
 make release
@@ -102,13 +102,14 @@ That flow:
 2. Runs `make dist` (signed, notarized DMG)
 3. Creates or updates the **draft** release `<version>` at `HEAD`. The notes list the commits since the last published release and are replaced on every run
 4. Deletes old `SiliconCellar-<version>-*.dmg` assets from the draft and uploads the new DMG
-5. Writes `version "<version>,<build>"` and the DMG `sha256` into `../homebrew-siliconcellar/Casks/siliconcellar.rb`
+5. Writes `version "<version>,<build>"` and the DMG `sha256` into `homebrew-siliconcellar/Casks/siliconcellar.rb`
 
 Then, by hand:
 
 1. Download the DMG from the draft release and test it
 2. Publish the release and set it as latest
-3. Commit and push `Casks/siliconcellar.rb` in the tap repo
+3. Commit and push `Casks/siliconcellar.rb` in the `homebrew-siliconcellar` submodule
+4. Commit and push the `homebrew-siliconcellar` submodule pointer in this repo
 
 Homebrew cannot download draft assets, so `brew install --cask norsegaud/siliconcellar/siliconcellar` works only after step 2 and step 3. To update the cask without a release (for example, after a manual upload), run `./scripts/update-cask.sh <version> <build> <dmg>`.
 

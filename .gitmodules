@@ -2,3 +2,11 @@
 	path = wine
 	url = git@github.com:NorseGaud/wine.git
 	branch = siliconcellar
+[submodule "homebrew-siliconcellar"]
+	path = homebrew-siliconcellar
+	url = git@github.com:NorseGaud/homebrew-siliconcellar.git
+	branch = main
+[submodule "siliconcellar-renderers"]
+	path = siliconcellar-renderers
+	url = git@github.com:NorseGaud/siliconcellar-renderers.git
+	branch = main

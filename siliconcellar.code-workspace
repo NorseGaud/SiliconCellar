@@ -4,7 +4,10 @@
 			"path": "."
 		},
 		{
-			"path": "../homebrew-siliconcellar"
+			"path": "homebrew-siliconcellar"
+		},
+		{
+			"path": "siliconcellar-renderers"
 		}
 	],
 	"settings": {}

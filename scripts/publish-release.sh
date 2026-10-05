@@ -28,8 +28,9 @@ release_state() {
 check_release_preconditions() {
     command -v gh >/dev/null || fail "gh is not installed"
     gh auth status >/dev/null 2>&1 || fail "gh is not signed in; run gh auth login"
-    test -f "$cask_file" || fail "missing cask: $cask_file (clone git@github.com:${homebrew_tap_repo}.git there, or set HOMEBREW_TAP_DIR)"
-    [ -z "$(git status --porcelain)" ] || fail "working tree has uncommitted changes; commit them so the release matches the DMG"
+    test -f "$cask_file" || fail "missing cask: $cask_file (run git submodule update --init homebrew-siliconcellar, or set HOMEBREW_TAP_DIR)"
+    # The cask is not in the DMG, and each release edits it before its commit.
+    [ -z "$(git status --porcelain -- . ':(exclude)homebrew-siliconcellar')" ] || fail "working tree has uncommitted changes; commit them so the release matches the DMG"
     # GitHub releases own the version tags, so a stale local tag must not stop the check.
     git fetch origin --tags --force --quiet
     [ -n "$(git branch -r --contains HEAD)" ] || fail "HEAD is not pushed to origin; push it first"
@@ -97,6 +98,7 @@ Next:
   1. Download the DMG from the draft and test it.
   2. Publish the release and set it as latest.
   3. Commit and push $cask_file (${homebrew_tap_repo}).
+  4. Commit and push the homebrew-siliconcellar submodule pointer here.
 EOF
 }
 

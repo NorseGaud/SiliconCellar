@@ -105,6 +105,8 @@ For unsigned packaging only, use `make app` or `make ci`.
 | `Tests/SiliconCellarCoreTests/` | Unit tests. `RuntimeTests.swift` has the fake Wine that the other tests use |
 | `Recipes/` | Bundled game recipes (JSON) and `QUEUE.md` |
 | `wine/` | NorseGaud/wine submodule (SSH). Engine source you edit |
+| `homebrew-siliconcellar/` | NorseGaud/homebrew-siliconcellar submodule (SSH). Homebrew cask that `make release` updates |
+| `siliconcellar-renderers/` | NorseGaud/siliconcellar-renderers submodule (SSH). Builds the DXVK, DXMT, and D3DMetal packages |
 | `engine/manifest.json` | Pinned NorseGaud/wine Engine release |
 | `scripts/` | Package, Engine fetch, DMG, `dev.sh`, `steam-app-info.py` |
 
