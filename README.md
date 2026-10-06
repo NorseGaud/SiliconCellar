@@ -4,6 +4,8 @@
 
 # Silicon Cellar
 
+> **This project is archived.** Work on Silicon Cellar has stopped. We now contribute to [Highball](https://github.com/gauthierpiarrette/highball), and we send game recipes to [highball-db](https://github.com/gauthierpiarrette/highball-db). Use Highball to run Windows games on Apple Silicon. The recipes and notes in this repo stay here for reference.
+
 [![CI](https://github.com/NorseGaud/SiliconCellar/actions/workflows/ci.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/NorseGaud/SiliconCellar/actions/workflows/codeql.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/codeql.yml)
 [![zizmor](https://github.com/NorseGaud/SiliconCellar/actions/workflows/zizmor.yml/badge.svg)](https://github.com/NorseGaud/SiliconCellar/actions/workflows/zizmor.yml)
