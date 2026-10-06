@@ -51,10 +51,15 @@ PE_STRIP_TOOLS = {
 DYLIB_NAME = re.compile(rb"lib[A-Za-z0-9_.+-]+\.dylib")
 
 
+def require_pe_strip_tools() -> None:
+    missing = [tool for tool in PE_STRIP_TOOLS.values() if shutil.which(tool) is None]
+    if missing:
+        sys.exit(f"{' and '.join(missing)} not found (brew install mingw-w64)")
+
+
 def strip_pe_debug_data(engine_dir: Path) -> None:
+    require_pe_strip_tools()
     for subdir, tool in PE_STRIP_TOOLS.items():
-        if shutil.which(tool) is None:
-            sys.exit(f"{tool} not found (brew install mingw-w64)")
         pe_files = [str(p) for p in (engine_dir / "lib/wine" / subdir).iterdir() if p.is_file()]
         subprocess.run([tool, "--strip-debug", *pe_files], check=True)
 
@@ -90,6 +95,9 @@ def remove_unreferenced_dylibs(engine_dir: Path) -> None:
 
 
 def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] == "--require-tools":
+        require_pe_strip_tools()
+        return
     engine_dir = Path(sys.argv[1]).resolve()
     if not (engine_dir / "bin/wine").is_file():
         sys.exit(f"{engine_dir} is not a Wine Engine tree")

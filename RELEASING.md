@@ -56,6 +56,8 @@ You can leave the API key path empty and use an Apple ID plus an [app-specific p
 
 ## Build the DMG
 
+Install `mingw-w64` once (`brew install mingw-w64`). `make` checks for its `strip` tools before it builds.
+
 ```sh
 make
 ```

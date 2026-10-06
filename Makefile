@@ -1,4 +1,4 @@
-.PHONY: all build test app engine engine-source engine-tag engine-pin dev clean lint ci sign create-dmg notarize dist release
+.PHONY: all build test app engine engine-source engine-tag engine-pin dev clean lint ci sign create-dmg notarize dist release require-engine-tools
 
 # Developer ID release signing (non-CI). Credentials stay in the login keychain.
 CODESIGN_IDENTITY?=Developer ID Application: ONLYHUMN LLC (4JD8RUCQ2W)
@@ -15,7 +15,7 @@ DMG=SiliconCellar-$(version)-$(build_number).dmg
 
 # Default: lint, test, debug build, fresh Wine Engine, then signed/notarized release DMG.
 # CI must use `make ci` (unsigned app only; no Engine compile).
-all: lint test build engine dist
+all: require-engine-tools lint test build engine dist
 
 build:
 	swift build
@@ -40,7 +40,13 @@ engine-tag:
 engine-pin:
 	./scripts/pin-wine-engine.sh
 
-app:
+# mingw-w64 strip tools. scripts/slim-engine.py needs them. CI skips the Engine.
+require-engine-tools:
+ifndef CI
+	python3 scripts/slim-engine.py --require-tools
+endif
+
+app: require-engine-tools
 	VERSION="$(version)" BUILD_NUMBER="$(build_number)" ./scripts/package-app.sh
 
 dev:
@@ -109,7 +115,7 @@ else
 endif
 
 # Signed DMG → draft GitHub release → cask in homebrew-siliconcellar/. Publish and commit by hand.
-release:
+release: require-engine-tools
 ifdef CI
 	@echo 'CI: skipping release'
 else

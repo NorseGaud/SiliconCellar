@@ -19,6 +19,14 @@ else
     bundle_version="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 fi
 
+ENGINE_SRC="$ROOT/.build/engine"
+# Check the Engine strip tools before the release compile. CI skips the Engine.
+if [ -z "${CI:-}" ]; then
+    if [ "${SKIP_ENGINE_BUILD:-}" != "1" ] || [ -x "$ENGINE_SRC/bin/wine" ]; then
+        python3 "$ROOT/scripts/slim-engine.py" --require-tools
+    fi
+fi
+
 swift build -c release --product SiliconCellar
 swift build -c release --product siliconcellar-cli
 BIN="$(swift build -c release --show-bin-path)"
@@ -28,7 +36,6 @@ cp "$BIN/siliconcellar-cli" "$APP/Contents/MacOS/siliconcellar-cli"
 mkdir -p "$APP/Contents/Resources/Recipes"
 cp Recipes/*.json "$APP/Contents/Resources/Recipes/"
 
-ENGINE_SRC="$ROOT/.build/engine"
 ENGINE_DST="$APP/Contents/Resources/Engine"
 copy_slim_engine() {
     rm -rf "$ENGINE_DST"
