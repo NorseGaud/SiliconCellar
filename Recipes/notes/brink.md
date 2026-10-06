@@ -46,6 +46,6 @@ Recipe: [brink.json](../brink.json)
 
 **Symptom.** The Mac menu bar stays visible, or the frame rate is too low.
 
-**Change.** `base/autoexec.cfg` sets the window to the full display frame, so the window covers the menu bar. `r_screenFraction` is 50, so the 3D view draws at half of that size and is stretched. Occlusion queries stay off, because this driver stalls on them.
+**Change.** `base/autoexec.cfg` sets the window to the full display frame, so the window covers the menu bar. `r_screenFraction` is 50, so the 3D view draws at half of that size and is stretched. Occlusion queries stay off, because this driver stalls on them. `r_swapInterval` is 0, so vsync is off. With vsync on, the heavy action parts dropped to a low frame rate. `r_useRenderThread` is 1, so the OpenGL calls run on a second thread. Without it, one thread did the game and the OpenGL work, and the action parts were choppy.
 
-**Reuse.** Use the full display frame when a window one point short of the screen leaves the menu bar visible. Use `r_screenFraction` when a game fills the whole frame and the frame rate is too low. Turn occlusion queries off when the frame time is a stall, not a fill-rate limit.
+**Reuse.** Use the full display frame when a window one point short of the screen leaves the menu bar visible. Use `r_screenFraction` when a game fills the whole frame and the frame rate is too low. Turn occlusion queries off when the frame time is a stall, not a fill-rate limit. Turn vsync off when the frame rate drops in heavy scenes and no thread is at 100% CPU. Turn on the render thread of an id Tech 4 game when one thread does the game and the OpenGL work.
