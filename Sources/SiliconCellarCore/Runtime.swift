@@ -1601,11 +1601,18 @@ public enum WineServerSocket {
 public enum SteamClientProcess {
     public static func isRunning(in processList: String, prefix: URL) -> Bool {
         let prefixPath = prefix.path
-        return processList.split(whereSeparator: \.isNewline).contains { line in
-            let command = String(line)
-            // Require the Silicon Cellar prefix path. Matching bare "steam.exe" also hits
-            // dying Wine orphans (Windows-only argv) and briefly flashes "Steam is running".
-            return isSteamClient(command) && command.contains(prefixPath)
+        let lines = processList.split(whereSeparator: \.isNewline).map(String.init)
+        // Wine replaces the Mac launch path with `C:\Program Files (x86)\Steam\steam.exe`.
+        // That line is the live client while wineserver is in the list. After wineserver
+        // exits, the same line is a leftover process.
+        let wineserverIsUp = lines.contains { line in
+            let lower = line.lowercased()
+            return lower.contains("wineserver") && !ShellCommand.isShell(lower)
+        }
+        return lines.contains { command in
+            guard isSteamClient(command) else { return false }
+            if command.contains(prefixPath) { return true }
+            return wineserverIsUp
         }
     }
 

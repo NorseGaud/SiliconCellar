@@ -1071,13 +1071,21 @@ final class RuntimeTests: XCTestCase {
                 prefix: prefix
             )
         )
-        // Dying Wine orphans often show Windows-only paths with no Silicon Cellar prefix.
+        // After wineserver exits, the same Windows path is a leftover. Do not treat it as Steam.
         XCTAssertFalse(
             SteamClientProcess.isRunning(
                 in: #"C:\Program Files (x86)\Steam\steam.exe -nofriendsui -nochatui"# + "\n/bin/ps",
                 prefix: prefix
             )
         )
+        // Wine replaces the launch path with this Windows path while wineserver is still up.
+        let liveWindowsPath = """
+            /Applications/SiliconCellar.app/Contents/Resources/Engine/lib/wine/../../bin/wineserver
+            C:\\Program Files (x86)\\Steam\\steam.exe -nofriendsui -nochatui -cef-disable-gpu
+            C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\steamwebhelper.exe --type=gpu
+            """
+        XCTAssertTrue(SteamClientProcess.isRunning(in: liveWindowsPath, prefix: prefix))
+        XCTAssertTrue(SteamClientProcess.isFullyRunning(in: liveWindowsPath, prefix: prefix))
     }
 
     func testGameProcessDetectsExecutableWithoutMatchingSteam() {
