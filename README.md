@@ -61,6 +61,7 @@ Each game below has a recipe in `Recipes/`. When you add a recipe, add the game 
 - [ ] [Diablo II: Resurrected](Recipes/d2r.json)
 - [ ] [Diablo IV](Recipes/diablo4.json)
 - [ ] [Elden Ring](Recipes/elden-ring.json)
+- [ ] [Grand Theft Auto V Enhanced](Recipes/gta5-enhanced.json)
 - [ ] [Grand Theft Auto: San Andreas – The Definitive Edition](Recipes/san-andreas-de.json)
 - [ ] [Heroes of Might and Magic III](Recipes/heroes3.json)
 - [ ] [Hogwarts Legacy](Recipes/hogwarts-legacy.json)

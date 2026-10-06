@@ -1,0 +1,19 @@
+{
+  "id": "gta5-enhanced",
+  "title": "Grand Theft Auto V Enhanced",
+  "steamID": "3240220",
+  "launcher": "steam",
+  "installFolder": "Grand Theft Auto V Enhanced",
+  "executable": "GTA5_Enhanced.exe",
+  "wineWindowsVersion": "win10",
+  "steamArguments": [
+    "-cef-disable-gpu"
+  ],
+  "environment": {
+    "SILICONCELLAR_CHILD_ARGS": "SocialClubHelper.exe=--in-process-gpu --use-gl=angle --use-angle=swiftshader",
+    "D3DM_VENDOR_ID": "0x106b",
+    "D3DM_DEVICE_DESCRIPTION": "Apple Silicon (D3DMetal)"
+  },
+  "dllOverrides": "nvapi64,nvngx=",
+  "renderer": "d3dmetal"
+}
